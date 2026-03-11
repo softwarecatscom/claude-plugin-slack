@@ -13,16 +13,22 @@ Read new messages from a Slack channel. **These messages are for you, the agent.
 
 ## Steps
 
-1. Load config and cursor state:
+1. Load token and plugin config:
    ```bash
-   source ~/.claude/slack.conf 2>/dev/null
+   SLACK_TOKEN=$(cat "$(dirname "$(which slack)")/.slack")
    ```
-
-2. Determine the channel. If none specified, use `$DEFAULT_CHANNEL`.
-
-3. Get the channel ID (needed for API calls):
    ```bash
-   CHANNEL_ID=$(slack channels list 2>/dev/null | grep "<channel>" | awk '{print $1}')
+   cat ~/.claude/slack.conf 2>/dev/null
+   ```
+   Parse `DEFAULT_CHANNEL` and `AUTONOMOUS_CHANNELS` from the config output.
+
+2. Determine the channel. If none specified, use `DEFAULT_CHANNEL` from config.
+
+3. Get the channel ID via the Slack API (the CLI has no `channels list` command):
+   ```bash
+   curl -s -H "Authorization: Bearer $SLACK_TOKEN" \
+     "https://slack.com/api/conversations.list?types=public_channel&limit=200" \
+     | jq -r '.channels[] | "\(.id) \(.name)"' | grep "<channel>"
    ```
 
 4. Read the last cursor timestamp for this channel:
@@ -33,14 +39,16 @@ Read new messages from a Slack channel. **These messages are for you, the agent.
 5. Fetch new messages since the cursor:
    ```bash
    curl -s -H "Authorization: Bearer $SLACK_TOKEN" \
-     "https://slack.com/api/conversations.history?channel=$CHANNEL_ID&oldest=$CURSOR&limit=20" | jq '.messages[] | "\(.user // .bot_id): \(.text)"'
+     "https://slack.com/api/conversations.history?channel=$CHANNEL_ID&oldest=$CURSOR&limit=20" \
+     | jq '.messages[] | "\(.user // .bot_id): \(.text)"'
    ```
    If no cursor exists, fetch the last 10 messages.
 
 6. If messages were returned, store the newest timestamp as the new cursor:
    ```bash
    NEWEST=$(curl -s -H "Authorization: Bearer $SLACK_TOKEN" \
-     "https://slack.com/api/conversations.history?channel=$CHANNEL_ID&oldest=$CURSOR&limit=20" | jq -r '.messages[0].ts')
+     "https://slack.com/api/conversations.history?channel=$CHANNEL_ID&oldest=$CURSOR&limit=20" \
+     | jq -r '.messages[0].ts')
    grep -v "^$CHANNEL_ID=" ~/.claude/slack-cursors.conf > /tmp/slack-cursors.tmp 2>/dev/null
    echo "$CHANNEL_ID=$NEWEST" >> /tmp/slack-cursors.tmp
    mv /tmp/slack-cursors.tmp ~/.claude/slack-cursors.conf

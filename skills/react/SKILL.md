@@ -13,14 +13,14 @@ Add an emoji reaction to the most recently read message.
 
 ## Steps
 
-1. Load config:
+1. Load token:
    ```bash
-   source ~/.claude/slack.conf 2>/dev/null
+   SLACK_TOKEN=$(cat "$(dirname "$(which slack)")/.slack")
    ```
 
 2. Get the last-read message timestamp and channel from `~/.claude/slack-cursors.conf`. The most recently updated entry is the target.
 
-3. Add the reaction:
+3. Add the reaction (no CLI equivalent — uses curl):
    ```bash
    curl -s -X POST -H "Authorization: Bearer $SLACK_TOKEN" \
      -H "Content-type: application/json" \

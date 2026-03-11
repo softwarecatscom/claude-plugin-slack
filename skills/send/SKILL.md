@@ -14,17 +14,17 @@ Send a message to a Slack channel or DM.
 
 ## Steps
 
-1. Load config:
+1. Load plugin config:
    ```bash
-   source ~/.claude/slack.conf 2>/dev/null
+   cat ~/.claude/slack.conf 2>/dev/null
    ```
-   If config is missing and `$SLACK_TOKEN` is not set, tell the user to run `/slack:setup` first.
+   If the config is missing and no channel was specified, tell the user to run `/scc-slack:setup` first.
 
 2. If you already have the channel and message from conversation context (e.g., replying to a read message), send directly — skip to step 4.
 
 3. Otherwise, ask the user for any missing fields (channel, message).
 
-4. Send the message:
+4. Send the message (uses CLI — token is read automatically):
    ```bash
    slack chat send --text "<message>" --channel "<channel>"
    ```

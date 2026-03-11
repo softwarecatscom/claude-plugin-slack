@@ -5,19 +5,30 @@ description: List Slack channels the bot has access to. Use when the user says "
 
 # List Slack Channels
 
-List all channels the bot is a member of.
+List all public channels (and private channels if `groups:read` scope is granted).
 
 ## Steps
 
-1. Load config:
+1. Load token and plugin config:
    ```bash
-   source ~/.claude/slack.conf 2>/dev/null
+   SLACK_TOKEN=$(cat "$(dirname "$(which slack)")/.slack")
    ```
-   If config is missing and `$SLACK_TOKEN` is not set, tell the user to run `/slack:setup` first.
-
-2. List channels:
    ```bash
-   slack channels list
+   cat ~/.claude/slack.conf 2>/dev/null
+   ```
+   If the token file is missing, tell the user to run `/scc-slack:setup` first.
+
+2. List channels via the Slack API (the CLI has no channels command):
+   ```bash
+   curl -s -H "Authorization: Bearer $SLACK_TOKEN" \
+     "https://slack.com/api/conversations.list?types=public_channel&limit=200" \
+     | jq -r '.channels[] | "\(.id)\t\(.name)\t\(.num_members)\t\(.purpose.value // "")"'
+   ```
+   To include private channels (requires `groups:read` scope):
+   ```bash
+   curl -s -H "Authorization: Bearer $SLACK_TOKEN" \
+     "https://slack.com/api/conversations.list?types=public_channel,private_channel&limit=200" \
+     | jq -r '.channels[] | "\(.id)\t\(.name)\t\(.num_members)\t\(.purpose.value // "")"'
    ```
 
 3. Present the results showing: channel name, ID, member count, and purpose/topic.

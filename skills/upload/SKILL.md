@@ -14,18 +14,18 @@ Upload a file or code snippet to a Slack channel.
 
 ## Steps
 
-1. Load config:
+1. Load plugin config:
    ```bash
-   source ~/.claude/slack.conf 2>/dev/null
+   cat ~/.claude/slack.conf 2>/dev/null
    ```
-   If config is missing and `$SLACK_TOKEN` is not set, tell the user to run `/slack:setup` first.
+   If the config is missing and no channel was specified, tell the user to run `/scc-slack:setup` first.
 
 2. Verify the file exists:
    ```bash
    ls -la "<file>"
    ```
 
-3. Upload the file:
+3. Upload the file (uses CLI — token is read automatically):
    ```bash
    slack file upload --file "<file>" --channels "<channel>"
    ```

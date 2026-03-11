@@ -14,18 +14,9 @@ Set the bot's Slack profile status text and emoji.
 
 ## Steps
 
-1. Load config:
+1. Set the status (uses CLI — token is read automatically):
    ```bash
-   source ~/.claude/slack.conf 2>/dev/null
-   ```
-   If config is missing and `$SLACK_TOKEN` is not set, tell the user to run `/slack:setup` first.
-
-2. Set the status:
-   ```bash
-   curl -s -X POST -H "Authorization: Bearer $SLACK_TOKEN" \
-     -H "Content-type: application/json" \
-     -d "{\"profile\":{\"status_text\":\"$TEXT\",\"status_emoji\":\":$EMOJI:\"}}" \
-     https://slack.com/api/users.profile.set
+   slack status edit --text "<text>" --emoji ":<emoji>:"
    ```
 
-3. Confirm the status was updated.
+2. Confirm the status was updated.

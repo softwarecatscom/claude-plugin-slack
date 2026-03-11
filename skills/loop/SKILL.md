@@ -21,15 +21,16 @@ check slack — for each channel in AUTONOMOUS_CHANNELS from ~/.claude/slack.con
 
 Each minute, the scheduled prompt runs. The agent should:
 
-1. Load config:
+1. Load plugin config:
    ```bash
-   source ~/.claude/slack.conf 2>/dev/null
+   cat ~/.claude/slack.conf 2>/dev/null
    ```
+   Parse `AUTONOMOUS_CHANNELS` from the output.
 
-2. For each channel in `$AUTONOMOUS_CHANNELS` (comma-separated):
-   - Get the channel ID
+2. For each channel in `AUTONOMOUS_CHANNELS` (comma-separated):
+   - Get the channel ID via curl (see scc-slack:read skill)
    - Fetch messages newer than the stored cursor
-   - If new messages exist: use the `slack-read` skill to read and act on them
+   - If new messages exist: use the `scc-slack:read` skill to read and act on them
    - If no new messages: produce no output (stay quiet)
 
 ## Stopping

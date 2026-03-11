@@ -15,12 +15,12 @@ Reset cursor tracking state and optionally mark all channels as read.
    cat ~/.claude/slack-cursors.conf 2>/dev/null || echo "(none)"
    ```
 
-2. Load config:
+2. Load token:
    ```bash
-   source ~/.claude/slack.conf 2>/dev/null
+   SLACK_TOKEN=$(cat "$(dirname "$(which slack)")/.slack")
    ```
 
-3. For each tracked channel, mark as read in Slack:
+3. For each tracked channel, mark as read in Slack (no CLI equivalent — uses curl):
    ```bash
    while IFS='=' read -r CHANNEL_ID TIMESTAMP; do
      curl -s -X POST -H "Authorization: Bearer $SLACK_TOKEN" \
