@@ -5,7 +5,7 @@ description: Read new Slack messages from a channel. Use when the user says "che
 
 # Read Slack Messages
 
-Read new messages from a Slack channel. **These messages are for you, the agent.** Read them, understand them, and act on them autonomously. Do NOT ask the user if they want to reply — just handle each message yourself. Only involve the user when you genuinely cannot proceed without their input.
+Read new messages from a Slack channel and act on them autonomously.
 
 ## Arguments
 
@@ -13,23 +13,11 @@ Read new messages from a Slack channel. **These messages are for you, the agent.
 
 ## Steps
 
-1. Load token and plugin config:
-   ```bash
-   SLACK_TOKEN=$(cat "$(dirname "$(which slack)")/.slack")
-   ```
-   ```bash
-   cat ~/.claude/slack.conf 2>/dev/null
-   ```
-   Parse `DEFAULT_CHANNEL` and `AUTONOMOUS_CHANNELS` from the config output.
+1. Use the `scc-slack:token` skill to load `SLACK_TOKEN`.
 
-2. Determine the channel. If none specified, use `DEFAULT_CHANNEL` from config.
+2. Use the `scc-slack:config` skill to load plugin config. If no channel was specified, use `DEFAULT_CHANNEL`.
 
-3. Get the channel ID via the Slack API (the CLI has no `channels list` command):
-   ```bash
-   curl -s -H "Authorization: Bearer $SLACK_TOKEN" \
-     "https://slack.com/api/conversations.list?types=public_channel&limit=200" \
-     | jq -r '.channels[] | "\(.id) \(.name)"' | grep "<channel>"
-   ```
+3. Use the `scc-slack:lookup` skill to resolve the channel name to a channel ID.
 
 4. Read the last cursor timestamp for this channel:
    ```bash
@@ -44,20 +32,14 @@ Read new messages from a Slack channel. **These messages are for you, the agent.
    ```
    If no cursor exists, fetch the last 10 messages.
 
-6. **Resolve user IDs to display names.** Fetch the workspace user list and replace raw user IDs with human-readable names:
-   ```bash
-   curl -s -H "Authorization: Bearer $SLACK_TOKEN" "https://slack.com/api/users.list" \
-     | jq -r '.members[] | "\(.id)\t\(.profile.display_name // .profile.real_name // .name)"'
-   ```
-   - Replace the `.user` field (e.g., `U0AKE1L3YJ3`) with the display name (e.g., `Rogue1`)
+6. **Resolve user IDs to display names.** For each user ID in the results, use the `scc-slack:lookup` skill to resolve `@USER_ID` to a display name:
+   - Replace the `.user` field (e.g., `U0AKE1L3YJ3`) with the display name
    - Replace `<@USER_ID>` patterns inside message text with `@display_name`
    - Present messages as `DisplayName: message text` not `U0AKE1L3YJ3: message text`
 
 7. If messages were returned, store the newest timestamp as the new cursor:
    ```bash
-   NEWEST=$(curl -s -H "Authorization: Bearer $SLACK_TOKEN" \
-     "https://slack.com/api/conversations.history?channel=$CHANNEL_ID&oldest=$CURSOR&limit=20" \
-     | jq -r '.messages[0].ts')
+   NEWEST=$(echo "$RESPONSE" | jq -r '.messages[0].ts')
    grep -v "^$CHANNEL_ID=" ~/.claude/slack-cursors.conf > /tmp/slack-cursors.tmp 2>/dev/null
    echo "$CHANNEL_ID=$NEWEST" >> /tmp/slack-cursors.tmp
    mv /tmp/slack-cursors.tmp ~/.claude/slack-cursors.conf
@@ -71,10 +53,50 @@ Read new messages from a Slack channel. **These messages are for you, the agent.
      https://slack.com/api/conversations.mark
    ```
 
-9. **Act on each message:**
-   - If it's a question you can answer, reply via slack-send
-   - If it requires action (run a command, check something), do it and reply with the result
-   - If it's informational, acknowledge it
-   - If you need the user's input to proceed, summarize the message and ask them
+9. If no new messages, say nothing. Do not report "no new messages" — stay completely silent.
 
-10. If no new messages, say nothing (stay quiet to avoid noise).
+## Acting on messages
+
+You are an autonomous agent. These messages are directed at a shared channel where multiple agents and humans collaborate. Your job is to pick up work addressed to you and get it done.
+
+### Which messages are for you
+
+Respond to messages that:
+- **Mention you by name** — your bot name, `@your_bot_name`, or any recognizable reference to you
+- **Mention `@here` or `@channel`** — these are addressed to everyone present, including you
+- **Are a direct follow-up** to a conversation you're already participating in
+
+Ignore messages that:
+- Are addressed to a **different agent** by name (e.g., if you're `z490` and the message says `@macini do X`)
+- Are **general chatter** between humans with no action for you
+- Are **system/join/leave messages** with no actionable content
+
+When in doubt about whether a message is for you, err on the side of responding — a brief "Did you mean me?" via `scc-slack:send` is better than dropping a request.
+
+### How to act
+
+**Default to action, not questions.** When you receive a request:
+
+1. **Just do it.** If you can complete the task with the tools and context available to you, do the work and reply with the result. Do not ask "should I go ahead?" or "would you like me to?" — the message is the instruction.
+
+2. **Reply in Slack.** Use `scc-slack:send` to post your response to the same channel. The person who asked should see your answer where they asked, not buried in your terminal.
+
+3. **Show your work.** When you complete a task, reply with what you did and the outcome. Keep it concise — a summary and key details, not a wall of text.
+
+4. **Handle multi-step tasks end to end.** If someone asks you to "check the deploy and fix any issues," do both. Don't stop after checking and ask if they want you to fix it.
+
+5. **React to acknowledge.** When you pick up a message, use `scc-slack:react` with `eyes` to signal you've seen it. When done, react with `white_check_mark`.
+
+### When to escalate to the user
+
+Involve your local user (the human at your terminal) only when:
+
+- **You lack access** — the task requires credentials, permissions, or systems you can't reach
+- **It's a judgment call** — the task involves a decision with significant consequences (deleting data, spending money, messaging external people) where the right choice isn't obvious
+- **You're stuck** — you've tried and genuinely cannot make progress
+- **It's ambiguous and high-stakes** — you're not sure what's being asked AND getting it wrong would be costly
+
+Do NOT escalate for:
+- Clarifying questions you could answer with a reasonable assumption (make the assumption, state it, and proceed)
+- Tasks that seem hard but are within your capabilities
+- Requests where the intent is clear even if the wording is vague

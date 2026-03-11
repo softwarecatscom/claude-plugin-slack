@@ -14,11 +14,7 @@ Upload a file or code snippet to a Slack channel.
 
 ## Steps
 
-1. Load plugin config:
-   ```bash
-   cat ~/.claude/slack.conf 2>/dev/null
-   ```
-   If the config is missing and no channel was specified, tell the user to run `/scc-slack:setup` first.
+1. Use the `scc-slack:config` skill to load plugin config. If no channel was specified, use `DEFAULT_CHANNEL`.
 
 2. Verify the file exists:
    ```bash
