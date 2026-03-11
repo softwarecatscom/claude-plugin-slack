@@ -23,20 +23,28 @@ The plugin ships with a shim script (`scripts/slack-shim`) that loads the token 
 
 ```bash
 PLUGIN_SHIM=$(find ~/.claude/plugins/cache -path "*/scc-slack/*/scripts/slack-shim" 2>/dev/null | sort -V | tail -1)
+if [ -z "$PLUGIN_SHIM" ]; then
+  echo "ERROR: slack-shim not found in plugin cache. Is the scc-slack plugin installed?" >&2
+  exit 1
+fi
 [ -L ~/.local/bin/slack ] && rm ~/.local/bin/slack
 mkdir -p ~/.local/bin
 cp "$PLUGIN_SHIM" ~/.local/bin/slack
 chmod +x ~/.local/bin/slack
+if ! grep -q "Shim for slack-cli" ~/.local/bin/slack; then
+  echo "ERROR: ~/.local/bin/slack is not the expected shim. Remove it and re-run setup." >&2
+  exit 1
+fi
 ```
 
 **If `which slack` returns a path outside `~/.local/bin`** (e.g., `/usr/local/bin/slack`), warn the user that a system-installed copy exists and will shadow the shim. Remove or rename the system copy so `~/.local/bin/slack` takes precedence.
 
-Verify it runs:
+Verify the installed shim is correct:
 ```bash
-which slack 2>/dev/null && slack 2>&1 | head -1
+which slack 2>/dev/null && grep -c "Shim for slack-cli" "$(which slack)" && slack 2>&1 | head -1
 ```
 
-Confirm the resolved path is `~/.local/bin/slack` (the copied shim), not a system copy or symlink.
+The `grep -c` must return `1`. If it returns `0`, the file at that path is not the shim. Confirm the resolved path is `~/.local/bin/slack` (the copied shim), not a system copy or symlink.
 
 If `~/.local/bin` is not on `$PATH`, tell the user to add it.
 
