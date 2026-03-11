@@ -19,19 +19,11 @@ If either is missing, install them:
 
 ## Step 2: Install slack-cli shim
 
-The plugin ships with a shim script (`scripts/slack-shim`) that loads the token and delegates to the latest vendored slack-cli. Find and install it:
+The plugin ships with a shim script (`scripts/slack-shim`) that loads the token and delegates to the latest vendored slack-cli. Find and install it in a single step:
 
 ```bash
 PLUGIN_SHIM=$(find ~/.claude/plugins/cache -path "*/scc-slack/*/scripts/slack-shim" 2>/dev/null | sort -V | tail -1)
-```
-
-If `~/.local/bin/slack` already exists, check if it's a symlink and remove it:
-```bash
 [ -L ~/.local/bin/slack ] && rm ~/.local/bin/slack
-```
-
-Copy (not symlink) the shim into place:
-```bash
 mkdir -p ~/.local/bin
 cp "$PLUGIN_SHIM" ~/.local/bin/slack
 chmod +x ~/.local/bin/slack
