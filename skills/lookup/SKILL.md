@@ -5,40 +5,43 @@ description: Look up a Slack channel or user by name. Use when the user says "lo
 
 # Slack Lookup
 
-Resolve a channel name to its ID/details, or a user name to their ID/profile.
+Resolve a channel name to its ID, or a user name to their ID. Results are cached — repeated lookups are instant.
 
 ## Arguments
 
 - `query` — a channel name prefixed with `#` (e.g., `#general`) or a user name prefixed with `@` (e.g., `@christo`). The prefix can be omitted if the intent is clear from context.
 
+## Scripts
+
+Locate the plugin scripts once per session:
+```bash
+SCRIPTS_DIR=$(find ~/.claude/plugins/cache -path "*/scc-slack/*/scripts/slack-identity" 2>/dev/null | sort -V | tail -1 | xargs dirname)
+```
+
 ## Steps
 
-1. Use the `scc-slack:token` skill to load `SLACK_TOKEN`.
-
-2. **If the query is a channel** (`#` prefix or channel context):
-
-   Resolve via the Slack API:
+1. **If the query is a channel** (`#` prefix or channel context):
    ```bash
-   curl -s -H "Authorization: Bearer $SLACK_TOKEN" \
-     "https://slack.com/api/conversations.list?types=public_channel,private_channel&limit=200" \
-     | jq -r '.channels[] | select(.name=="<channel_name>") | "\(.id)\t\(.name)\t\(.num_members)\t\(.purpose.value // "")"'
+   "${SCRIPTS_DIR}/slack-resolve" --channel "<channel_name>"
    ```
-   If the call fails with `missing_scope`, fall back to public channels only:
+   Output: `CHANNEL_ID=channel_name`
+
+2. **If the query is a user by name** (`@` prefix or user context):
    ```bash
-   curl -s -H "Authorization: Bearer $SLACK_TOKEN" \
-     "https://slack.com/api/conversations.list?types=public_channel&limit=200" \
-     | jq -r '.channels[] | select(.name=="<channel_name>") | "\(.id)\t\(.name)\t\(.num_members)\t\(.purpose.value // "")"'
+   "${SCRIPTS_DIR}/slack-resolve" --name "<display_name>"
    ```
+   Output: `USER_ID=display_name`
 
-   Return the channel ID, name, member count, and purpose.
-
-3. **If the query is a user** (`@` prefix or user context):
-
-   Resolve via the Slack API:
+3. **If the query is a user ID** (e.g., `U0AKZ8QEQ66`):
    ```bash
-   curl -s -H "Authorization: Bearer $SLACK_TOKEN" "https://slack.com/api/users.list" \
-     | jq -r '.members[] | "\(.id)\t\(.name)\t\(.profile.display_name)\t\(.profile.real_name)"'
+   "${SCRIPTS_DIR}/slack-resolve" "<user_id>"
    ```
-   Match the query against `name`, `display_name`, or `real_name` (case-insensitive). Return the user ID, username, display name, and real name.
+   Output: `USER_ID=display_name`
 
-4. If no match is found, report that and suggest checking the spelling or running `scc-slack:channels` to list available channels.
+4. **Batch resolve** multiple IDs or names in one call:
+   ```bash
+   "${SCRIPTS_DIR}/slack-resolve" U0AKZ8QEQ66 U0AKE1L3YJ3
+   "${SCRIPTS_DIR}/slack-resolve" --name Z490 Rogue1
+   ```
+
+5. If no match is found, report that and suggest checking the spelling or running `scc-slack:channels` to list available channels.

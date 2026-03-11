@@ -1,0 +1,63 @@
+#!/usr/bin/env bash
+# Filter Slack messages for ones that mention a specific user.
+# Reads raw conversations.history JSON from stdin, outputs only actionable messages.
+#
+# Usage: slack-fetch CHANNEL_ID | slack-filter
+#
+# Loads identity from ~/.claude/slack-cache/identity (run slack-identity first).
+# A message is actionable if it:
+#   - Contains <@YOUR_USER_ID>
+#   - Contains your username, display_name, or real_name (case-insensitive)
+#   - Contains <!here>, <!channel>, or <!everyone>
+#   - Is NOT from your own user ID
+#
+# Output: JSON array of matching messages with metadata:
+#   [{"ts": "...", "user": "...", "text": "...", "match_type": "direct|broadcast|name"}]
+
+set -euo pipefail
+
+CACHE_DIR="${HOME}/.claude/slack-cache"
+IDENTITY_FILE="${CACHE_DIR}/identity"
+
+if [ ! -f "${IDENTITY_FILE}" ]; then
+  echo "ERROR: No identity cached. Run slack-identity first." >&2
+  exit 1
+fi
+
+# Load identity
+eval "$(cat "${IDENTITY_FILE}")"
+
+# Read JSON from stdin
+INPUT=$(cat)
+
+# Check API response is ok
+if [ "$(echo "${INPUT}" | jq -r '.ok')" != "true" ]; then
+  echo "ERROR: API response not ok: $(echo "${INPUT}" | jq -r '.error // "unknown"')" >&2
+  exit 1
+fi
+
+# Filter messages using jq
+# Pass identity values as jq args for safe interpolation
+echo "${INPUT}" | jq --arg uid "${USER_ID}" \
+                     --arg uname "${USERNAME}" \
+                     --arg dname "${DISPLAY_NAME}" \
+                     --arg rname "${REAL_NAME}" '
+[.messages[]
+ | select(.user != $uid)
+ | select(.subtype == null or .subtype == "bot_message")
+ | . as $msg
+ | (
+     # Check for direct mention <@USER_ID>
+     if (.text | test("<@" + $uid + ">")) then "direct"
+     # Check for broadcast mentions
+     elif (.text | test("<!here>|<!channel>|<!everyone>")) then "broadcast"
+     # Check for name mentions (case-insensitive)
+     elif ($uname != "" and (.text | ascii_downcase | test($uname | ascii_downcase))) then "name"
+     elif ($dname != "" and (.text | ascii_downcase | test($dname | ascii_downcase))) then "name"
+     elif ($rname != "" and $rname != $dname and (.text | ascii_downcase | test($rname | ascii_downcase))) then "name"
+     else null
+     end
+   ) as $match_type
+ | select($match_type != null)
+ | {ts: .ts, user: .user, text: .text, match_type: $match_type, bot_id: (.bot_id // null)}
+] | reverse'

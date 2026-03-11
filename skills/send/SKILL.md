@@ -12,19 +12,24 @@ Send a message to a Slack channel or DM.
 - `channel` — channel name or ID (e.g., `general`, `C01ABC123`). Falls back to `DEFAULT_CHANNEL` from config.
 - `message` — the message text to send
 
+## Scripts
+
+Locate the plugin scripts once per session:
+```bash
+SCRIPTS_DIR=$(find ~/.claude/plugins/cache -path "*/scc-slack/*/scripts/slack-identity" 2>/dev/null | sort -V | tail -1 | xargs dirname)
+```
+
 ## Steps
 
 1. Use the `scc-slack:config` skill to load plugin config. If no channel was specified, use `DEFAULT_CHANNEL`.
 
-2. If you already have the channel and message from conversation context (e.g., replying to a read message), send directly — skip to step 4.
+2. If you already have the channel and message from conversation context (e.g., replying to a read message), skip to step 4.
 
 3. Otherwise, ask the user for any missing fields (channel, message).
 
-4. **Resolve @mentions in the message.** If the message contains `@name` patterns (e.g., `@rogue1`, `@christo`), use the `scc-slack:lookup` skill to resolve each name to a user ID. Replace `@name` with `<@USER_ID>` in the message text. If no match is found, warn and send as-is.
-
-5. Send the message (uses CLI — token is read automatically):
+4. Send the message. The script auto-resolves `@Name` to `<@USERID>` and channel names to IDs:
    ```bash
-   slack chat send --text "<message>" --channel "<channel>"
+   "${SCRIPTS_DIR}/slack-send" "${CHANNEL}" "${MESSAGE}"
    ```
 
-6. Confirm delivery with the channel name.
+5. Confirm delivery with the channel name.

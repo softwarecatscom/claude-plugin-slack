@@ -1,0 +1,72 @@
+#!/usr/bin/env bash
+# Send a Slack message with automatic @name and #channel resolution.
+# Resolves @DisplayName to <@USERID> and #channel to the channel ID using the resolve cache.
+#
+# Usage: slack-send CHANNEL TEXT
+#   CHANNEL — channel name (without #) or channel ID
+#   TEXT    — message text, may contain @DisplayName references
+#
+# Examples:
+#   slack-send agents "@Z490 Hey, deploy is done"
+#   slack-send agents "Hello everyone"
+#   slack-send C0AKTEMDP9C "@Christo check this out"
+
+set -euo pipefail
+
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+
+CHANNEL="${1:-}"
+TEXT="${2:-}"
+
+if [ -z "${CHANNEL}" ] || [ -z "${TEXT}" ]; then
+  echo "Usage: slack-send CHANNEL TEXT" >&2
+  exit 1
+fi
+
+# Load token
+SLACK_TOKEN=$(cat "$(dirname "$(which slack)")/.slack" 2>/dev/null)
+if [ -z "${SLACK_TOKEN}" ]; then
+  echo "ERROR: No Slack token found. Run /scc-slack:setup first." >&2
+  exit 1
+fi
+
+# Resolve channel name to ID if it doesn't look like a channel ID
+CHANNEL_ID="${CHANNEL}"
+if [[ ! "${CHANNEL}" =~ ^C[A-Z0-9]+$ ]]; then
+  RESOLVED=$("${SCRIPT_DIR}/slack-resolve" --channel "${CHANNEL}" 2>/dev/null | head -1 | cut -d= -f1)
+  if [ -n "${RESOLVED}" ] && [ "${RESOLVED}" != "UNKNOWN" ]; then
+    CHANNEL_ID="${RESOLVED}"
+  else
+    echo "ERROR: Could not resolve channel '${CHANNEL}'" >&2
+    exit 1
+  fi
+fi
+
+# Resolve @mentions in the text
+# Find all @Name patterns (word after @, may include underscores/digits)
+RESOLVED_TEXT="${TEXT}"
+while IFS= read -r name; do
+  [ -z "${name}" ] && continue
+  # Look up the name to get user ID
+  MATCH=$("${SCRIPT_DIR}/slack-resolve" --name "${name}" 2>/dev/null | head -1)
+  if [ -n "${MATCH}" ] && [[ "${MATCH}" != UNKNOWN=* ]]; then
+    UID_RESOLVED="${MATCH%%=*}"
+    # Replace @Name with <@USERID>
+    RESOLVED_TEXT="${RESOLVED_TEXT//@${name}/<@${UID_RESOLVED}>}"
+  fi
+done < <(echo "${TEXT}" | grep -oP '@\K[A-Za-z][A-Za-z0-9_]+' | sort -u)
+
+# Send via API
+RESPONSE=$(curl -s -X POST https://slack.com/api/chat.postMessage \
+  -H "Authorization: Bearer ${SLACK_TOKEN}" \
+  -H "Content-type: application/json; charset=utf-8" \
+  -d "$(jq -n --arg channel "${CHANNEL_ID}" --arg text "${RESOLVED_TEXT}" \
+    '{channel: $channel, text: $text}')")
+
+if [ "$(echo "${RESPONSE}" | jq -r '.ok')" = "true" ]; then
+  echo "${RESPONSE}" | jq '{ok: .ok, ts: .message.ts, channel: .channel}'
+else
+  echo "ERROR: $(echo "${RESPONSE}" | jq -r '.error')" >&2
+  echo "${RESPONSE}" | jq '.' >&2
+  exit 1
+fi

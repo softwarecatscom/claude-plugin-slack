@@ -1,0 +1,147 @@
+#!/usr/bin/env bash
+# Batch resolve Slack user IDs to display names and vice versa.
+# Maintains a persistent cache in ~/.claude/slack-cache/users.
+# Only calls the API for IDs not already cached.
+#
+# Usage:
+#   slack-resolve U0AKZ8QEQ66 U0AKE1L3YJ3    — resolve user IDs to names
+#   slack-resolve --name Z490 Rogue1           — resolve display names to user IDs
+#   slack-resolve --channel agents dev         — resolve channel names to IDs
+#   slack-resolve --channel-id C0AKTEMDP9C     — resolve channel IDs to names
+#
+# Output: ID=NAME lines (one per argument)
+
+set -euo pipefail
+
+CACHE_DIR="${HOME}/.claude/slack-cache"
+USER_CACHE="${CACHE_DIR}/users"
+CHANNEL_CACHE="${CACHE_DIR}/channels"
+
+mkdir -p "${CACHE_DIR}"
+touch "${USER_CACHE}" "${CHANNEL_CACHE}"
+
+# Load token
+SLACK_TOKEN=$(cat "$(dirname "$(which slack)")/.slack" 2>/dev/null)
+if [ -z "${SLACK_TOKEN}" ]; then
+  echo "ERROR: No Slack token found. Run /scc-slack:setup first." >&2
+  exit 1
+fi
+
+MODE="id_to_name"
+case "${1:-}" in
+  --name)     MODE="name_to_id"; shift ;;
+  --channel)  MODE="channel_name_to_id"; shift ;;
+  --channel-id) MODE="channel_id_to_name"; shift ;;
+esac
+
+resolve_user_id() {
+  local uid="$1"
+  # Check cache
+  local cached
+  cached=$(grep "^${uid}=" "${USER_CACHE}" 2>/dev/null | head -1 | cut -d= -f2- || true)
+  if [ -n "${cached}" ]; then
+    echo "${uid}=${cached}"
+    return
+  fi
+  # API call
+  local info
+  info=$(curl -s -H "Authorization: Bearer ${SLACK_TOKEN}" "https://slack.com/api/users.info?user=${uid}")
+  if [ "$(echo "${info}" | jq -r '.ok')" = "true" ]; then
+    local dname
+    dname=$(echo "${info}" | jq -r '.user.profile.display_name // ""')
+    [ -z "${dname}" ] && dname=$(echo "${info}" | jq -r '.user.profile.real_name // ""')
+    [ -z "${dname}" ] && dname=$(echo "${info}" | jq -r '.user.name // ""')
+    echo "${uid}=${dname}" >> "${USER_CACHE}"
+    echo "${uid}=${dname}"
+  else
+    echo "${uid}=UNKNOWN" >&2
+  fi
+}
+
+resolve_name_to_id() {
+  local name="$1"
+  local lower_name
+  lower_name=$(echo "${name}" | tr '[:upper:]' '[:lower:]')
+  # Check cache (reverse lookup, case-insensitive)
+  local match
+  match=$(awk -F= -v n="${lower_name}" '{if (tolower($2) == n) print $0}' "${USER_CACHE}" | head -1)
+  if [ -n "${match}" ]; then
+    echo "${match}"
+    return
+  fi
+  # Need to fetch user list and search
+  local users
+  users=$(curl -s -H "Authorization: Bearer ${SLACK_TOKEN}" "https://slack.com/api/users.list?limit=200")
+  if [ "$(echo "${users}" | jq -r '.ok')" = "true" ]; then
+    # Bulk-write user cache (avoid pipe subshell)
+    echo "${users}" | jq -r '.members[] | "\(.id)=\(.profile.display_name // .profile.real_name // .name)"' >> "${USER_CACHE}.tmp"
+    sort -u -t= -k1,1 "${USER_CACHE}" "${USER_CACHE}.tmp" > "${USER_CACHE}.new" 2>/dev/null || true
+    mv "${USER_CACHE}.new" "${USER_CACHE}"
+    rm -f "${USER_CACHE}.tmp"
+    # Now search
+    match=$(awk -F= -v n="${lower_name}" '{if (tolower($2) == n) print $0}' "${USER_CACHE}" | head -1)
+    if [ -n "${match}" ]; then
+      echo "${match}"
+    else
+      echo "UNKNOWN=${name}" >&2
+    fi
+  fi
+}
+
+resolve_channel_name() {
+  local cname="$1"
+  # Check cache
+  local cached
+  cached=$(grep "=${cname}$" "${CHANNEL_CACHE}" 2>/dev/null | head -1 | cut -d= -f1 || true)
+  if [ -n "${cached}" ]; then
+    echo "${cached}=${cname}"
+    return
+  fi
+  # API call
+  local channels
+  channels=$(curl -s -H "Authorization: Bearer ${SLACK_TOKEN}" "https://slack.com/api/conversations.list?types=public_channel,private_channel&limit=200")
+  if [ "$(echo "${channels}" | jq -r '.ok')" = "true" ]; then
+    # Bulk-write channel cache (avoid pipe subshell)
+    echo "${channels}" | jq -r '.channels[] | "\(.id)=\(.name)"' >> "${CHANNEL_CACHE}.tmp"
+    sort -u -t= -k1,1 "${CHANNEL_CACHE}" "${CHANNEL_CACHE}.tmp" > "${CHANNEL_CACHE}.new" 2>/dev/null || true
+    mv "${CHANNEL_CACHE}.new" "${CHANNEL_CACHE}"
+    rm -f "${CHANNEL_CACHE}.tmp"
+    cached=$(grep "=${cname}$" "${CHANNEL_CACHE}" 2>/dev/null | head -1 | cut -d= -f1 || true)
+    if [ -n "${cached}" ]; then
+      echo "${cached}=${cname}"
+    else
+      echo "UNKNOWN=${cname}" >&2
+    fi
+  fi
+}
+
+resolve_channel_id() {
+  local cid="$1"
+  local cached
+  cached=$(grep "^${cid}=" "${CHANNEL_CACHE}" 2>/dev/null | head -1 | cut -d= -f2- || true)
+  if [ -n "${cached}" ]; then
+    echo "${cid}=${cached}"
+    return
+  fi
+  # API call
+  local info
+  info=$(curl -s -H "Authorization: Bearer ${SLACK_TOKEN}" "https://slack.com/api/conversations.info?channel=${cid}")
+  if [ "$(echo "${info}" | jq -r '.ok')" = "true" ]; then
+    local cname
+    cname=$(echo "${info}" | jq -r '.channel.name')
+    echo "${cid}=${cname}" >> "${CHANNEL_CACHE}"
+    echo "${cid}=${cname}"
+  else
+    echo "${cid}=UNKNOWN" >&2
+  fi
+}
+
+# Process each argument
+for arg in "$@"; do
+  case "${MODE}" in
+    id_to_name)        resolve_user_id "${arg}" ;;
+    name_to_id)        resolve_name_to_id "${arg}" ;;
+    channel_name_to_id) resolve_channel_name "${arg}" ;;
+    channel_id_to_name) resolve_channel_id "${arg}" ;;
+  esac
+done

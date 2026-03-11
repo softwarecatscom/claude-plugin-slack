@@ -1,0 +1,50 @@
+#!/usr/bin/env bash
+# Return the bot's identity: user_id, username, display_name, real_name.
+# Caches the result in ~/.claude/slack-cache/identity so subsequent calls are instant.
+#
+# Usage: slack-identity
+# Output: key=value lines (USER_ID, USERNAME, DISPLAY_NAME, REAL_NAME)
+
+set -euo pipefail
+
+CACHE_DIR="${HOME}/.claude/slack-cache"
+CACHE_FILE="${CACHE_DIR}/identity"
+
+# Return cached identity if available
+if [ -f "${CACHE_FILE}" ]; then
+  cat "${CACHE_FILE}"
+  exit 0
+fi
+
+# Load token
+SLACK_TOKEN=$(cat "$(dirname "$(which slack)")/.slack" 2>/dev/null)
+if [ -z "${SLACK_TOKEN}" ]; then
+  echo "ERROR: No Slack token found. Run /scc-slack:setup first." >&2
+  exit 1
+fi
+
+# auth.test to get user_id and username
+AUTH=$(curl -s -H "Authorization: Bearer ${SLACK_TOKEN}" https://slack.com/api/auth.test)
+if [ "$(echo "${AUTH}" | jq -r '.ok')" != "true" ]; then
+  echo "ERROR: auth.test failed: $(echo "${AUTH}" | jq -r '.error')" >&2
+  exit 1
+fi
+
+USER_ID=$(echo "${AUTH}" | jq -r '.user_id')
+USERNAME=$(echo "${AUTH}" | jq -r '.user')
+
+# users.info to get display_name and real_name
+INFO=$(curl -s -H "Authorization: Bearer ${SLACK_TOKEN}" "https://slack.com/api/users.info?user=${USER_ID}")
+DISPLAY_NAME=$(echo "${INFO}" | jq -r '.user.profile.display_name // ""')
+REAL_NAME=$(echo "${INFO}" | jq -r '.user.profile.real_name // ""')
+
+# Cache it
+mkdir -p "${CACHE_DIR}"
+cat > "${CACHE_FILE}" <<EOF
+USER_ID=${USER_ID}
+USERNAME=${USERNAME}
+DISPLAY_NAME=${DISPLAY_NAME}
+REAL_NAME=${REAL_NAME}
+EOF
+
+cat "${CACHE_FILE}"

@@ -1,0 +1,40 @@
+#!/usr/bin/env bash
+# Read or update the message cursor for a channel.
+#
+# Usage:
+#   slack-cursor read  CHANNEL_ID         — print the cursor timestamp (empty if none)
+#   slack-cursor write CHANNEL_ID TIMESTAMP — update the cursor
+#
+# Cursors are stored in ~/.claude/slack-cursors.conf
+
+set -euo pipefail
+
+CURSOR_FILE="${HOME}/.claude/slack-cursors.conf"
+
+ACTION="${1:-}"
+CHANNEL_ID="${2:-}"
+
+if [ -z "${ACTION}" ] || [ -z "${CHANNEL_ID}" ]; then
+  echo "Usage: slack-cursor read|write CHANNEL_ID [TIMESTAMP]" >&2
+  exit 1
+fi
+
+case "${ACTION}" in
+  read)
+    grep "^${CHANNEL_ID}=" "${CURSOR_FILE}" 2>/dev/null | cut -d= -f2 || true
+    ;;
+  write)
+    TIMESTAMP="${3:-}"
+    if [ -z "${TIMESTAMP}" ]; then
+      echo "ERROR: timestamp required for write" >&2
+      exit 1
+    fi
+    grep -v "^${CHANNEL_ID}=" "${CURSOR_FILE}" > /tmp/slack-cursors.tmp 2>/dev/null || true
+    echo "${CHANNEL_ID}=${TIMESTAMP}" >> /tmp/slack-cursors.tmp
+    mv /tmp/slack-cursors.tmp "${CURSOR_FILE}"
+    ;;
+  *)
+    echo "ERROR: unknown action '${ACTION}'. Use read or write." >&2
+    exit 1
+    ;;
+esac

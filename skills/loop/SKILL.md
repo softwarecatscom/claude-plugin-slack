@@ -23,7 +23,7 @@ Each minute, the scheduled prompt runs. The agent should:
 
 1. Use the `scc-slack:config` skill to load `AUTONOMOUS_CHANNELS`.
 
-2. For each channel in `AUTONOMOUS_CHANNELS` (comma-separated), use the `scc-slack:read` skill. Read handles everything: fetching messages, resolving names, acting on requests, and replying.
+2. For each channel in `AUTONOMOUS_CHANNELS` (comma-separated), use the `scc-slack:read` skill. Read handles everything: fetching, filtering, evaluating, acting, and replying.
 
 3. If read produces no output for any channel (no new messages), stay completely silent. Do not report that nothing happened.
 
