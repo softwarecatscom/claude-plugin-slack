@@ -116,11 +116,12 @@ Keep responses concise — summary and key details, not a wall of text.
 
 ### Step 7: Update cursor
 
-After processing all messages (or if there were no actionable messages), update the cursor to the newest message timestamp:
+After processing all messages (or if there were no actionable messages), update the cursor to the newest message timestamp. Use the `MESSAGES` variable from step 4 — do not re-fetch:
 ```bash
 NEWEST=$(echo "${MESSAGES}" | jq -r '.messages[0].ts')
 "${SCRIPTS_DIR}/slack-cursor" write "${CHANNEL_ID}" "${NEWEST}"
 ```
+**Tip:** Store `NEWEST` right after the fetch in step 4 so it's available here even if `MESSAGES` has been lost from context.
 
 ### Step 8: Mark channel as read
 

@@ -69,6 +69,7 @@ If no token exists, walk the user through creating one:
    - `reactions:write` — add emoji reactions
    - `files:write` — upload files
    - `users:read` — resolve @mentions to user IDs
+   - `channels:mark` — mark channels as read (optional — polling works without it)
    - `users.profile:write` — set status
 4. Click **Install to Workspace** and authorize
 5. Copy the **Bot User OAuth Token** (starts with `xoxb-`)
