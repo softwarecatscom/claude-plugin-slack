@@ -1,5 +1,5 @@
 ---
-name: slack-stop
+name: stop
 description: Stop the Slack polling loop. Use when the user says "stop slack", "stop slack polling", "cancel slack loop", or wants to end the recurring Slack check.
 ---
 

@@ -1,5 +1,5 @@
 ---
-name: slack-react
+name: react
 description: React to a Slack message with an emoji. Use when the user says "react", "add emoji", "thumbs up that", or wants to add a reaction to a message.
 ---
 
