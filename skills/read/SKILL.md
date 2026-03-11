@@ -32,9 +32,10 @@ Read new messages from a Slack channel and act on them autonomously.
    ```
    If no cursor exists, fetch the last 10 messages.
 
-6. **Resolve user IDs to display names.** For each user ID in the results, use the `scc-slack:lookup` skill to resolve `@USER_ID` to a display name:
+6. **Resolve mentions to display names.** For each mention in the results:
+   - `<@UXXXXX>` patterns are user mentions — use the `scc-slack:lookup` skill to resolve to `@display_name`
+   - `<!here>`, `<!channel>`, `<!everyone>` are broadcast markers — replace with `@here`, `@channel`, `@everyone` (do NOT try to resolve these as users)
    - Replace the `.user` field (e.g., `U0AKE1L3YJ3`) with the display name
-   - Replace `<@USER_ID>` patterns inside message text with `@display_name`
    - Present messages as `DisplayName: message text` not `U0AKE1L3YJ3: message text`
 
 7. If messages were returned, store the newest timestamp as the new cursor:
@@ -59,12 +60,32 @@ Read new messages from a Slack channel and act on them autonomously.
 
 You are an autonomous agent. These messages are directed at a shared channel where multiple agents and humans collaborate. Your job is to pick up work addressed to you and get it done.
 
+### Know your identity
+
+Before filtering messages, establish who you are:
+```bash
+curl -s -H "Authorization: Bearer $SLACK_TOKEN" https://slack.com/api/auth.test | jq -r '.user, .user_id'
+```
+This returns your bot username (e.g., `claude_slack_plugin`) and user ID (e.g., `U0AKE1L3YJ3`). Also fetch your display name and real name:
+```bash
+curl -s -H "Authorization: Bearer $SLACK_TOKEN" "https://slack.com/api/users.info?user=$YOUR_USER_ID" \
+  | jq -r '.user.profile.display_name, .user.profile.real_name'
+```
+A message is addressed to you if it contains any of:
+- `<@YOUR_USER_ID>` — a proper Slack mention
+- Your bot username, display name, or real name (case-insensitive) — sometimes users type `@name` but Slack doesn't convert it to a proper mention
+- A recognizable variation or nickname the humans in the channel use to refer to you
+
 ### Which messages are for you
 
 Respond to messages that:
-- **Mention you by name** — your bot name, `@your_bot_name`, or any recognizable reference to you
-- **Mention `@here` or `@channel`** — these are addressed to everyone present, including you
+- **Mention you** — your user ID (`<@UXXXXX>`), bot username, or any recognizable name for you
 - **Are a direct follow-up** to a conversation you're already participating in
+
+**Broadcast messages (`@here`, `@channel`, `@everyone`)** require judgment — they are addressed to everyone present, but that doesn't mean every agent should respond. Read the message, understand what's being asked, and decide:
+- **Respond** if the request is something you can help with, is relevant to your capabilities, or explicitly asks all agents to do something
+- **Stay silent** if another agent is better suited, the request doesn't match your skills, or responding would just add noise (e.g., multiple agents all saying "got it")
+- **Coordinate** — if the broadcast asks for a single volunteer (e.g., "can someone check the logs?"), react with `eyes` first. If no other agent has reacted after a few seconds, pick it up. Avoid duplicate work.
 
 Ignore messages that:
 - Are addressed to a **different agent** by name (e.g., if you're `z490` and the message says `@macini do X`)
@@ -79,7 +100,7 @@ When in doubt about whether a message is for you, err on the side of responding 
 
 1. **Just do it.** If you can complete the task with the tools and context available to you, do the work and reply with the result. Do not ask "should I go ahead?" or "would you like me to?" — the message is the instruction.
 
-2. **Reply in Slack.** Use `scc-slack:send` to post your response to the same channel. The person who asked should see your answer where they asked, not buried in your terminal.
+2. **Reply in Slack.** Use `scc-slack:send` to post your response to the same channel. Address the person who sent the message with `@their_name` so they get notified (e.g., `@christo here's what I found...`). The person who asked should see your answer where they asked, not buried in your terminal.
 
 3. **Show your work.** When you complete a task, reply with what you did and the outcome. Keep it concise — a summary and key details, not a wall of text.
 
