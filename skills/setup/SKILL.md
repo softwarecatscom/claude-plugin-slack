@@ -17,32 +17,38 @@ If either is missing, install them:
 - **Debian/Ubuntu:** `sudo apt-get install -y curl jq`
 - **macOS:** `brew install curl jq`
 
-## Step 2: Install slack-cli
+## Step 2: Install slack-cli shim
 
-The plugin ships with slack-cli vendored in `scripts/slack`. Find the plugin's installed copy and symlink it:
+The plugin ships with a shim script (`scripts/slack-shim`) that loads the token and delegates to the latest vendored slack-cli. Find and install it:
 
 ```bash
-PLUGIN_SLACK=$(find ~/.claude/plugins/cache -path "*/scc-slack/*/scripts/slack" 2>/dev/null | sort -V | tail -1)
+PLUGIN_SHIM=$(find ~/.claude/plugins/cache -path "*/scc-slack/*/scripts/slack-shim" 2>/dev/null | sort -V | tail -1)
 ```
 
-If found, create the symlink:
+If `~/.local/bin/slack` already exists, check if it's a symlink and remove it:
+```bash
+[ -L ~/.local/bin/slack ] && rm ~/.local/bin/slack
+```
+
+Copy (not symlink) the shim into place:
 ```bash
 mkdir -p ~/.local/bin
-ln -sf "$PLUGIN_SLACK" ~/.local/bin/slack
+cp "$PLUGIN_SHIM" ~/.local/bin/slack
+chmod +x ~/.local/bin/slack
 ```
 
-**If `which slack` returns a path outside `~/.local/bin`** (e.g., `/usr/local/bin/slack`), warn the user that a system-installed copy exists and will shadow the vendored version. Remove or rename the system copy so `~/.local/bin/slack` takes precedence.
+**If `which slack` returns a path outside `~/.local/bin`** (e.g., `/usr/local/bin/slack`), warn the user that a system-installed copy exists and will shadow the shim. Remove or rename the system copy so `~/.local/bin/slack` takes precedence.
 
 Verify it runs:
 ```bash
 which slack 2>/dev/null && slack 2>&1 | head -1
 ```
 
-Confirm the resolved path is `~/.local/bin/slack` (the vendored symlink), not a system copy.
+Confirm the resolved path is `~/.local/bin/slack` (the copied shim), not a system copy or symlink.
 
 If `~/.local/bin` is not on `$PATH`, tell the user to add it.
 
-> **Note:** The CLI only covers chat, file, presence, reminder, snooze, and status commands. Other operations (listing channels, reading history, reactions, marking read) use the Slack API via curl. The token is shared — `slack init` stores it and curl reads it from the same file.
+> **Note:** The shim reads `.slack` from its own directory (`~/.local/bin/.slack`), finds the latest vendored `scripts/slack` in the plugin cache, and delegates all commands. The `init` command is intercepted by the shim to write the token next to itself. Other operations (listing channels, reading history, reactions, marking read) use the Slack API via curl. The token is shared — `slack init` stores it and curl reads it from `~/.local/bin/.slack`.
 
 ## Step 3: Create a Slack App (if needed)
 
