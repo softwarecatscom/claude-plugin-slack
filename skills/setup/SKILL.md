@@ -31,10 +31,14 @@ mkdir -p ~/.local/bin
 ln -sf "$PLUGIN_SLACK" ~/.local/bin/slack
 ```
 
+**If `which slack` returns a path outside `~/.local/bin`** (e.g., `/usr/local/bin/slack`), warn the user that a system-installed copy exists and will shadow the vendored version. Remove or rename the system copy so `~/.local/bin/slack` takes precedence.
+
 Verify it runs:
 ```bash
 which slack 2>/dev/null && slack 2>&1 | head -1
 ```
+
+Confirm the resolved path is `~/.local/bin/slack` (the vendored symlink), not a system copy.
 
 If `~/.local/bin` is not on `$PATH`, tell the user to add it.
 
@@ -55,7 +59,7 @@ If no token exists, walk the user through creating one:
    - `chat:write` — send messages
    - `channels:read` — list public channels
    - `channels:history` — read messages
-   - `groups:read` — list private channels (optional, for private channel access)
+   - `groups:read` — list private channels (required — without this, API calls that request private channels fail entirely, even for public channel results)
    - `reactions:write` — add emoji reactions
    - `files:write` — upload files
    - `users:read` — resolve @mentions to user IDs
@@ -76,6 +80,11 @@ This stores the token in a `.slack` file next to the binary. All skills (both CL
 Check if `~/.claude/slack.conf` already exists:
 ```bash
 cat ~/.claude/slack.conf 2>/dev/null
+```
+
+If config exists but contains a `SLACK_TOKEN=` line, strip it — the token is managed by slack-cli, not the config file:
+```bash
+grep -v '^SLACK_TOKEN=' ~/.claude/slack.conf > /tmp/slack.conf.tmp && mv /tmp/slack.conf.tmp ~/.claude/slack.conf
 ```
 
 If no config exists, ask the user for:

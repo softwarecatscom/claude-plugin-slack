@@ -18,17 +18,15 @@ List all public channels (and private channels if `groups:read` scope is granted
    ```
    If the token file is missing, tell the user to run `/scc-slack:setup` first.
 
-2. List channels via the Slack API (the CLI has no channels command):
+2. List channels via the Slack API (the CLI has no channels command). Try public+private first, fall back to public-only if `groups:read` is missing:
    ```bash
-   curl -s -H "Authorization: Bearer $SLACK_TOKEN" \
-     "https://slack.com/api/conversations.list?types=public_channel&limit=200" \
-     | jq -r '.channels[] | "\(.id)\t\(.name)\t\(.num_members)\t\(.purpose.value // "")"'
-   ```
-   To include private channels (requires `groups:read` scope):
-   ```bash
-   curl -s -H "Authorization: Bearer $SLACK_TOKEN" \
-     "https://slack.com/api/conversations.list?types=public_channel,private_channel&limit=200" \
-     | jq -r '.channels[] | "\(.id)\t\(.name)\t\(.num_members)\t\(.purpose.value // "")"'
+   RESULT=$(curl -s -H "Authorization: Bearer $SLACK_TOKEN" \
+     "https://slack.com/api/conversations.list?types=public_channel,private_channel&limit=200")
+   if echo "$RESULT" | jq -e '.ok == false and .error == "missing_scope"' >/dev/null 2>&1; then
+     RESULT=$(curl -s -H "Authorization: Bearer $SLACK_TOKEN" \
+       "https://slack.com/api/conversations.list?types=public_channel&limit=200")
+   fi
+   echo "$RESULT" | jq -r '.channels[] | "\(.id)\t\(.name)\t\(.num_members)\t\(.purpose.value // "")"'
    ```
 
 3. Present the results showing: channel name, ID, member count, and purpose/topic.
