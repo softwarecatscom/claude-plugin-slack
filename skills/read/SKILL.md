@@ -44,7 +44,16 @@ Read new messages from a Slack channel. **These messages are for you, the agent.
    ```
    If no cursor exists, fetch the last 10 messages.
 
-6. If messages were returned, store the newest timestamp as the new cursor:
+6. **Resolve user IDs to display names.** Fetch the workspace user list and replace raw user IDs with human-readable names:
+   ```bash
+   curl -s -H "Authorization: Bearer $SLACK_TOKEN" "https://slack.com/api/users.list" \
+     | jq -r '.members[] | "\(.id)\t\(.profile.display_name // .profile.real_name // .name)"'
+   ```
+   - Replace the `.user` field (e.g., `U0AKE1L3YJ3`) with the display name (e.g., `Rogue1`)
+   - Replace `<@USER_ID>` patterns inside message text with `@display_name`
+   - Present messages as `DisplayName: message text` not `U0AKE1L3YJ3: message text`
+
+7. If messages were returned, store the newest timestamp as the new cursor:
    ```bash
    NEWEST=$(curl -s -H "Authorization: Bearer $SLACK_TOKEN" \
      "https://slack.com/api/conversations.history?channel=$CHANNEL_ID&oldest=$CURSOR&limit=20" \
@@ -54,7 +63,7 @@ Read new messages from a Slack channel. **These messages are for you, the agent.
    mv /tmp/slack-cursors.tmp ~/.claude/slack-cursors.conf
    ```
 
-7. Update Slack's read marker:
+8. Update Slack's read marker:
    ```bash
    curl -s -X POST -H "Authorization: Bearer $SLACK_TOKEN" \
      -H "Content-type: application/json" \
@@ -62,10 +71,10 @@ Read new messages from a Slack channel. **These messages are for you, the agent.
      https://slack.com/api/conversations.mark
    ```
 
-8. **Act on each message:**
+9. **Act on each message:**
    - If it's a question you can answer, reply via slack-send
    - If it requires action (run a command, check something), do it and reply with the result
    - If it's informational, acknowledge it
    - If you need the user's input to proceed, summarize the message and ask them
 
-9. If no new messages, say nothing (stay quiet to avoid noise).
+10. If no new messages, say nothing (stay quiet to avoid noise).

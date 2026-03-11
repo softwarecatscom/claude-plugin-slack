@@ -20,13 +20,21 @@ Send a message to a Slack channel or DM.
    ```
    If the config is missing and no channel was specified, tell the user to run `/scc-slack:setup` first.
 
-2. If you already have the channel and message from conversation context (e.g., replying to a read message), send directly — skip to step 4.
+2. If you already have the channel and message from conversation context (e.g., replying to a read message), send directly — skip to step 5.
 
 3. Otherwise, ask the user for any missing fields (channel, message).
 
-4. Send the message (uses CLI — token is read automatically):
+4. **Resolve @mentions in the message.** If the message contains `@name` patterns (e.g., `@rogue1`, `@christo`), resolve each to a Slack user ID before sending:
+   ```bash
+   SLACK_TOKEN=$(cat "$(dirname "$(which slack)")/.slack")
+   curl -s -H "Authorization: Bearer $SLACK_TOKEN" "https://slack.com/api/users.list" \
+     | jq -r '.members[] | "\(.id)\t\(.name)\t\(.profile.display_name)\t\(.profile.real_name)"'
+   ```
+   Match `@name` against `name`, `display_name`, or `real_name` (case-insensitive). Replace `@name` with `<@USER_ID>` in the message text. If no match is found, warn and send as-is.
+
+5. Send the message (uses CLI — token is read automatically):
    ```bash
    slack chat send --text "<message>" --channel "<channel>"
    ```
 
-5. Confirm delivery with the channel name.
+6. Confirm delivery with the channel name.

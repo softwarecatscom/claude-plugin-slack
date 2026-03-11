@@ -34,7 +34,7 @@ Slack messaging plugin for Claude Code agents via [rockymadden/slack-cli](https:
 
 - [rockymadden/slack-cli](https://github.com/rockymadden/slack-cli) (installed by `/scc-slack:setup`)
 - `curl` + `jq`
-- A Slack Bot token (`xoxb-...`) with scopes: `chat:write`, `channels:read`, `channels:history`, `reactions:write`, `files:write`, `users.profile:write`
+- A Slack Bot token (`xoxb-...`) with scopes: `chat:write`, `channels:read`, `channels:history`, `reactions:write`, `files:write`, `users:read`, `users.profile:write`
 - Optional: `groups:read` scope for private channel access
 
 ## Setup

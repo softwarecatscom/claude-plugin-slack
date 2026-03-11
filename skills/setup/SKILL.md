@@ -55,6 +55,7 @@ If no token exists, walk the user through creating one:
    - `groups:read` — list private channels (optional, for private channel access)
    - `reactions:write` — add emoji reactions
    - `files:write` — upload files
+   - `users:read` — resolve @mentions to user IDs
    - `users.profile:write` — set status
 4. Click **Install to Workspace** and authorize
 5. Copy the **Bot User OAuth Token** (starts with `xoxb-`)
