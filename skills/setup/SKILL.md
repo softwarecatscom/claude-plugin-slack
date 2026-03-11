@@ -19,20 +19,23 @@ If either is missing, install them:
 
 ## Step 2: Install slack-cli
 
-Check if `slack` CLI is already installed:
+The plugin ships with slack-cli vendored in `scripts/slack`. Find the plugin's installed copy and symlink it:
+
 ```bash
-which slack 2>/dev/null
+PLUGIN_SLACK=$(find ~/.claude/plugins/cache -path "*/scc-slack/*/scripts/slack" 2>/dev/null | sort -V | tail -1)
 ```
-If not installed:
+
+If found, create the symlink:
 ```bash
 mkdir -p ~/.local/bin
-curl -o ~/.local/bin/slack https://raw.githubusercontent.com/rockymadden/slack-cli/master/src/slack
-chmod +x ~/.local/bin/slack
+ln -sf "$PLUGIN_SLACK" ~/.local/bin/slack
 ```
+
 Verify it runs:
 ```bash
-~/.local/bin/slack 2>&1 | head -1
+which slack 2>/dev/null && slack 2>&1 | head -1
 ```
+
 If `~/.local/bin` is not on `$PATH`, tell the user to add it.
 
 > **Note:** The CLI only covers chat, file, presence, reminder, snooze, and status commands. Other operations (listing channels, reading history, reactions, marking read) use the Slack API via curl. The token is shared — `slack init` stores it and curl reads it from the same file.
