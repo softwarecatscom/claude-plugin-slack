@@ -1,5 +1,5 @@
 ---
-name: read
+name: slack-read
 description: Read new Slack messages from a channel. Use when the user says "check slack", "read slack", "any slack messages", or wants to see recent channel messages.
 ---
 

@@ -1,5 +1,4 @@
 ---
-name: tidy
 description: Reset Slack cursor state and mark channels as read
 ---
 

@@ -1,5 +1,5 @@
 ---
-name: send
+name: slack-send
 description: Send a Slack message to a channel or DM. Use when the user says "send slack", "slack message", "post to slack", or wants to send a message to a Slack channel.
 ---
 

@@ -1,5 +1,5 @@
 ---
-name: setup
+name: slack-setup
 description: Install slack-cli and configure Slack credentials. Use when the user says "setup slack", "configure slack", "install slack", or before first use of any slack command.
 ---
 

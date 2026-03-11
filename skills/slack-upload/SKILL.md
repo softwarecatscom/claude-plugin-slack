@@ -1,5 +1,5 @@
 ---
-name: upload
+name: slack-upload
 description: Upload a file or snippet to a Slack channel. Use when the user says "upload to slack", "share file on slack", "post file", or wants to upload a file to Slack.
 ---
 

@@ -1,5 +1,5 @@
 ---
-name: status
+name: slack-status
 description: Set Slack status text and emoji. Use when the user says "set slack status", "update status", "change presence", or wants to update their Slack status.
 ---
 

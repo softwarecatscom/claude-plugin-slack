@@ -1,5 +1,5 @@
 ---
-name: loop
+name: slack-loop
 description: Start a /loop 1m polling cycle for Slack channels. Use when the user says "start slack polling", "slack loop", "monitor slack", or wants to watch Slack channels for new messages.
 ---
 

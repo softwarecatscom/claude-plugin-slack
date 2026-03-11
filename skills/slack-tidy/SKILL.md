@@ -1,5 +1,5 @@
 ---
-name: tidy
+name: slack-tidy
 description: Reset Slack cursor state and mark channels as read. Use when the user says "tidy slack", "reset slack cursors", "mark all read", or wants to clean up Slack tracking state.
 ---
 

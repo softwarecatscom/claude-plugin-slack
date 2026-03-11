@@ -1,5 +1,4 @@
 ---
-name: setup
 description: Install slack-cli and configure Slack credentials
 ---
 

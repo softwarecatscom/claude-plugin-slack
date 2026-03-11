@@ -1,5 +1,4 @@
 ---
-name: channels
 description: List Slack channels the bot has access to
 ---
 

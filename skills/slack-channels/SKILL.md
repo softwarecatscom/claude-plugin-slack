@@ -1,5 +1,5 @@
 ---
-name: channels
+name: slack-channels
 description: List Slack channels the bot has access to. Use when the user says "list channels", "slack channels", "what channels", or wants to see available Slack channels.
 ---
 

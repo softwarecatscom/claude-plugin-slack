@@ -1,5 +1,4 @@
 ---
-name: stop
 description: Stop the Slack polling loop
 ---
 
