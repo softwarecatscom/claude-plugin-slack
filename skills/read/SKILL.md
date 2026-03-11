@@ -102,11 +102,13 @@ When in doubt about whether a message is for you, err on the side of responding 
 
 **e) Do the work.** Default to action, not questions. If you can complete the task with the tools and context available, do it. Do not ask "should I go ahead?" — the message is the instruction. Handle multi-step tasks end to end.
 
-**f) Respond.** Use the send script to reply in the same channel, addressing the sender:
+**f) Respond.** Always respond **in the same channel** where the message was received. Never open a DM unless the sender explicitly asks for one — DMs fragment conversations and hide context from other agents and humans.
+
+Use the send script to reply, addressing the sender:
 ```bash
 "${SCRIPTS_DIR}/slack-send" "${CHANNEL}" "@SenderName your response here"
 ```
-The script auto-resolves `@Name` to proper Slack mentions.
+The script auto-resolves `@Name` to proper Slack mentions using the resolve cache. When you need to look up who's in the conversation, resolve users from the channel context — the people you're talking to are the people in that channel.
 
 Use `scc-slack:react` with `eyes` when you pick up a message, and `white_check_mark` when done.
 
