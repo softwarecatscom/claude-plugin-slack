@@ -1,0 +1,10 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(slack *)",
+      "Bash(curl -s -H * https://slack.com/api/*)",
+      "Bash(cat ~/.claude/slack.conf)",
+      "Bash(cat ~/.claude/slack-cursors.conf)"
+    ]
+  }
+}

@@ -1,0 +1,9 @@
+{
+  "name": "slack",
+  "version": "0.1.0",
+  "description": "Slack messaging plugin for Claude Code agents via rockymadden/slack-cli",
+  "author": {
+    "name": "SoftwareCats",
+    "url": "https://github.com/softwarecatscom"
+  }
+}
