@@ -1,6 +1,6 @@
 # Slack Plugin Implementation Plan
 
-> **For agentic workers:** REQUIRED: Use superpowers:subagent-driven-development (if subagents available) or superpowers:executing-plans to implement this plan. Steps use checkbox (`- [ ]`) syntax for tracking.
+> **For agentic workers:** REQUIRED: Use superpowers:subagent-driven-development (if subagents available) or superpowers:executing-plans to implement this plan. Steps use checkbox (`- [x]`) syntax for tracking.
 
 **Goal:** Build a Claude Code plugin for Slack messaging with 10 skills (setup, send, read, channels, react, upload, status, loop, stop, tidy) using `rockymadden/slack-cli`.
 
@@ -20,7 +20,7 @@
 - Create: `.claude-plugin/plugin.json`
 - Create: `.claude/settings.local.json`
 
-- [ ] **Step 1: Create plugin.json**
+- [x] **Step 1: Create plugin.json**
 
 ```json
 {
@@ -34,7 +34,7 @@
 }
 ```
 
-- [ ] **Step 2: Create settings.local.json**
+- [x] **Step 2: Create settings.local.json**
 
 ```json
 {
@@ -49,7 +49,7 @@
 }
 ```
 
-- [ ] **Step 3: Commit**
+- [x] **Step 3: Commit**
 
 ```bash
 git add .claude-plugin/plugin.json .claude/settings.local.json
@@ -62,7 +62,7 @@ git commit -m "feat: add plugin manifest and permissions"
 - Create: `commands/setup.md`
 - Create: `skills/slack-setup/SKILL.md`
 
-- [ ] **Step 1: Create the setup command**
+- [x] **Step 1: Create the setup command**
 
 File: `commands/setup.md`
 ```markdown
@@ -74,7 +74,7 @@ description: Install slack-cli and configure Slack credentials
 Use the `slack-setup` skill to set up Slack integration.
 ```
 
-- [ ] **Step 2: Create the setup skill**
+- [x] **Step 2: Create the setup skill**
 
 File: `skills/slack-setup/SKILL.md`
 ```markdown
@@ -135,7 +135,7 @@ Install `rockymadden/slack-cli` and configure credentials for Slack messaging.
 If `~/.claude/slack.conf` is missing but `$SLACK_TOKEN` is set in the environment, use that. Prompt the user to run `/slack:setup` for full configuration.
 ```
 
-- [ ] **Step 3: Commit**
+- [x] **Step 3: Commit**
 
 ```bash
 git add commands/setup.md skills/slack-setup/SKILL.md
@@ -148,7 +148,7 @@ git commit -m "feat: add slack:setup command and skill"
 - Create: `commands/send.md`
 - Create: `skills/slack-send/SKILL.md`
 
-- [ ] **Step 1: Create the send command**
+- [x] **Step 1: Create the send command**
 
 File: `commands/send.md`
 ```markdown
@@ -161,7 +161,7 @@ args: "<channel> <message>"
 Use the `slack-send` skill to send the message. Pass through all arguments.
 ```
 
-- [ ] **Step 2: Create the send skill**
+- [x] **Step 2: Create the send skill**
 
 File: `skills/slack-send/SKILL.md`
 ```markdown
@@ -199,7 +199,7 @@ Send a message to a Slack channel or DM.
 5. Confirm delivery with the channel name.
 ```
 
-- [ ] **Step 3: Commit**
+- [x] **Step 3: Commit**
 
 ```bash
 git add commands/send.md skills/slack-send/SKILL.md
@@ -212,7 +212,7 @@ git commit -m "feat: add slack:send command and skill"
 - Create: `commands/read.md`
 - Create: `skills/slack-read/SKILL.md`
 
-- [ ] **Step 1: Create the read command**
+- [x] **Step 1: Create the read command**
 
 File: `commands/read.md`
 ```markdown
@@ -225,7 +225,7 @@ args: "[channel]"
 Use the `slack-read` skill to read messages. Pass through all arguments.
 ```
 
-- [ ] **Step 2: Create the read skill**
+- [x] **Step 2: Create the read skill**
 
 File: `skills/slack-read/SKILL.md`
 ```markdown
@@ -294,7 +294,7 @@ Read new messages from a Slack channel. **These messages are for you, the agent.
 9. If no new messages, say nothing (stay quiet to avoid noise).
 ```
 
-- [ ] **Step 3: Commit**
+- [x] **Step 3: Commit**
 
 ```bash
 git add commands/read.md skills/slack-read/SKILL.md
@@ -309,7 +309,7 @@ git commit -m "feat: add slack:read command and skill"
 - Create: `commands/channels.md`
 - Create: `skills/slack-channels/SKILL.md`
 
-- [ ] **Step 1: Create the channels command**
+- [x] **Step 1: Create the channels command**
 
 File: `commands/channels.md`
 ```markdown
@@ -321,7 +321,7 @@ description: List Slack channels the bot has access to
 Use the `slack-channels` skill to list channels.
 ```
 
-- [ ] **Step 2: Create the channels skill**
+- [x] **Step 2: Create the channels skill**
 
 File: `skills/slack-channels/SKILL.md`
 ```markdown
@@ -352,7 +352,7 @@ List all channels the bot is a member of.
 4. Note which channels are in `AUTONOMOUS_CHANNELS` (from config) for the user's reference.
 ```
 
-- [ ] **Step 3: Commit**
+- [x] **Step 3: Commit**
 
 ```bash
 git add commands/channels.md skills/slack-channels/SKILL.md
@@ -365,7 +365,7 @@ git commit -m "feat: add slack:channels command and skill"
 - Create: `commands/react.md`
 - Create: `skills/slack-react/SKILL.md`
 
-- [ ] **Step 1: Create the react command**
+- [x] **Step 1: Create the react command**
 
 File: `commands/react.md`
 ```markdown
@@ -378,7 +378,7 @@ args: "<emoji>"
 Use the `slack-react` skill to add the reaction. Pass through all arguments.
 ```
 
-- [ ] **Step 2: Create the react skill**
+- [x] **Step 2: Create the react skill**
 
 File: `skills/slack-react/SKILL.md`
 ```markdown
@@ -415,7 +415,7 @@ Add an emoji reaction to the most recently read message.
 4. Confirm the reaction was added.
 ```
 
-- [ ] **Step 3: Commit**
+- [x] **Step 3: Commit**
 
 ```bash
 git add commands/react.md skills/slack-react/SKILL.md
@@ -428,7 +428,7 @@ git commit -m "feat: add slack:react command and skill"
 - Create: `commands/upload.md`
 - Create: `skills/slack-upload/SKILL.md`
 
-- [ ] **Step 1: Create the upload command**
+- [x] **Step 1: Create the upload command**
 
 File: `commands/upload.md`
 ```markdown
@@ -441,7 +441,7 @@ args: "<file> [channel]"
 Use the `slack-upload` skill to upload the file. Pass through all arguments.
 ```
 
-- [ ] **Step 2: Create the upload skill**
+- [x] **Step 2: Create the upload skill**
 
 File: `skills/slack-upload/SKILL.md`
 ```markdown
@@ -480,7 +480,7 @@ Upload a file or code snippet to a Slack channel.
 4. Confirm the upload with the filename and channel.
 ```
 
-- [ ] **Step 3: Commit**
+- [x] **Step 3: Commit**
 
 ```bash
 git add commands/upload.md skills/slack-upload/SKILL.md
@@ -493,7 +493,7 @@ git commit -m "feat: add slack:upload command and skill"
 - Create: `commands/status.md`
 - Create: `skills/slack-status/SKILL.md`
 
-- [ ] **Step 1: Create the status command**
+- [x] **Step 1: Create the status command**
 
 File: `commands/status.md`
 ```markdown
@@ -506,7 +506,7 @@ args: "<text> [emoji]"
 Use the `slack-status` skill to set the status. Pass through all arguments.
 ```
 
-- [ ] **Step 2: Create the status skill**
+- [x] **Step 2: Create the status skill**
 
 File: `skills/slack-status/SKILL.md`
 ```markdown
@@ -543,7 +543,7 @@ Set the bot's Slack profile status text and emoji.
 3. Confirm the status was updated.
 ```
 
-- [ ] **Step 3: Commit**
+- [x] **Step 3: Commit**
 
 ```bash
 git add commands/status.md skills/slack-status/SKILL.md
@@ -558,7 +558,7 @@ git commit -m "feat: add slack:status command and skill"
 - Create: `commands/loop.md`
 - Create: `skills/slack-loop/SKILL.md`
 
-- [ ] **Step 1: Create the loop command**
+- [x] **Step 1: Create the loop command**
 
 File: `commands/loop.md`
 ```markdown
@@ -570,7 +570,7 @@ description: Start a /loop 1m polling cycle for Slack channels
 Use the `slack-loop` skill to start the Slack polling loop.
 ```
 
-- [ ] **Step 2: Create the loop skill**
+- [x] **Step 2: Create the loop skill**
 
 File: `skills/slack-loop/SKILL.md`
 ```markdown
@@ -613,7 +613,7 @@ Each minute, the scheduled prompt runs. The agent should:
 Tell the user the CronDelete job ID so they can stop polling when done.
 ```
 
-- [ ] **Step 3: Commit**
+- [x] **Step 3: Commit**
 
 ```bash
 git add commands/loop.md skills/slack-loop/SKILL.md
@@ -626,7 +626,7 @@ git commit -m "feat: add slack:loop command and skill"
 - Create: `commands/stop.md`
 - Create: `skills/slack-stop/SKILL.md`
 
-- [ ] **Step 1: Create the stop command**
+- [x] **Step 1: Create the stop command**
 
 File: `commands/stop.md`
 ```markdown
@@ -638,7 +638,7 @@ description: Stop the Slack polling loop
 Use the `slack-stop` skill to stop the polling loop.
 ```
 
-- [ ] **Step 2: Create the stop skill**
+- [x] **Step 2: Create the stop skill**
 
 File: `skills/slack-stop/SKILL.md`
 ```markdown
@@ -661,7 +661,7 @@ Stop the recurring Slack polling loop started by the slack-loop skill.
 3. Confirm to the user that polling has stopped.
 ```
 
-- [ ] **Step 3: Commit**
+- [x] **Step 3: Commit**
 
 ```bash
 git add commands/stop.md skills/slack-stop/SKILL.md
@@ -674,7 +674,7 @@ git commit -m "feat: add slack:stop command and skill"
 - Create: `commands/tidy.md`
 - Create: `skills/slack-tidy/SKILL.md`
 
-- [ ] **Step 1: Create the tidy command**
+- [x] **Step 1: Create the tidy command**
 
 File: `commands/tidy.md`
 ```markdown
@@ -686,7 +686,7 @@ description: Reset Slack cursor state and mark channels as read
 Use the `slack-tidy` skill to tidy up Slack state.
 ```
 
-- [ ] **Step 2: Create the tidy skill**
+- [x] **Step 2: Create the tidy skill**
 
 File: `skills/slack-tidy/SKILL.md`
 ```markdown
@@ -730,7 +730,7 @@ Reset cursor tracking state and optionally mark all channels as read.
 5. Report what was tidied (number of channels reset).
 ```
 
-- [ ] **Step 3: Commit**
+- [x] **Step 3: Commit**
 
 ```bash
 git add commands/tidy.md skills/slack-tidy/SKILL.md
@@ -742,7 +742,7 @@ git commit -m "feat: add slack:tidy command and skill"
 **Files:**
 - Create: `README.md`
 
-- [ ] **Step 1: Create README.md**
+- [x] **Step 1: Create README.md**
 
 ```markdown
 # claude-plugin-slack
@@ -800,7 +800,7 @@ AUTONOMOUS_CHANNELS=general,alerts,deploys
 Falls back to `$SLACK_TOKEN` environment variable if config file is missing.
 ```
 
-- [ ] **Step 2: Commit**
+- [x] **Step 2: Commit**
 
 ```bash
 git add README.md
