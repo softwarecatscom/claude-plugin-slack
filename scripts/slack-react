@@ -1,0 +1,69 @@
+#!/usr/bin/env bash
+# Add or check emoji reactions on a Slack message.
+#
+# Usage:
+#   slack-react CHANNEL_ID TIMESTAMP EMOJI        — add a reaction
+#   slack-react --check CHANNEL_ID TIMESTAMP EMOJI — check if reaction exists (exit 0 = yes, 1 = no)
+#
+# Examples:
+#   slack-react C0AKTEMDP9C 1773337505.982529 eyes
+#   slack-react --check C0AKTEMDP9C 1773337505.982529 white_check_mark
+
+set -euo pipefail
+
+MODE="add"
+if [ "${1:-}" = "--check" ]; then
+  MODE="check"
+  shift
+fi
+
+CHANNEL_ID="${1:-}"
+TIMESTAMP="${2:-}"
+EMOJI="${3:-}"
+
+if [ -z "${CHANNEL_ID}" ] || [ -z "${TIMESTAMP}" ] || [ -z "${EMOJI}" ]; then
+  echo "Usage: slack-react [--check] CHANNEL_ID TIMESTAMP EMOJI" >&2
+  exit 1
+fi
+
+# Strip colons if provided (e.g., :thumbsup: → thumbsup)
+EMOJI="${EMOJI#:}"
+EMOJI="${EMOJI%:}"
+
+# Load token
+SLACK_TOKEN=$(cat "$(dirname "$(which slack)")/.slack" 2>/dev/null)
+if [ -z "${SLACK_TOKEN}" ]; then
+  echo "ERROR: No Slack token found. Run /scc-slack:setup first." >&2
+  exit 1
+fi
+
+if [ "${MODE}" = "check" ]; then
+  RESPONSE=$(curl -s "https://slack.com/api/reactions.get?channel=${CHANNEL_ID}&timestamp=${TIMESTAMP}" \
+    -H "Authorization: Bearer ${SLACK_TOKEN}")
+  if [ "$(echo "${RESPONSE}" | jq -r '.ok')" = "true" ]; then
+    if echo "${RESPONSE}" | jq -e --arg emoji "${EMOJI}" \
+      '.message.reactions[]? | select(.name == $emoji)' > /dev/null 2>&1; then
+      echo "yes"
+      exit 0
+    else
+      echo "no"
+      exit 1
+    fi
+  else
+    echo "ERROR: $(echo "${RESPONSE}" | jq -r '.error')" >&2
+    exit 1
+  fi
+else
+  RESPONSE=$(curl -s -X POST https://slack.com/api/reactions.add \
+    -H "Authorization: Bearer ${SLACK_TOKEN}" \
+    -H "Content-type: application/json" \
+    -d "{\"channel\":\"${CHANNEL_ID}\",\"timestamp\":\"${TIMESTAMP}\",\"name\":\"${EMOJI}\"}")
+  if [ "$(echo "${RESPONSE}" | jq -r '.ok')" = "true" ]; then
+    echo "ok"
+  elif [ "$(echo "${RESPONSE}" | jq -r '.error')" = "already_reacted" ]; then
+    echo "already_reacted"
+  else
+    echo "ERROR: $(echo "${RESPONSE}" | jq -r '.error')" >&2
+    exit 1
+  fi
+fi

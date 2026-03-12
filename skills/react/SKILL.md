@@ -44,9 +44,9 @@ SCRIPTS_DIR=$(find ~/.claude/plugins/cache -path "*/scc-slack/*/scripts/slack-id
 
 ## Steps
 
-### Step 1: Load token
+### Step 1: Load scripts
 
-Use the `scc-slack:token` skill to load `SLACK_TOKEN`.
+Locate the plugin scripts once per session (see Scripts above). **Always use `slack-react` for reactions — do not call the Slack API directly.**
 
 ### Step 2: Determine the target message
 
@@ -71,23 +71,18 @@ In priority order:
 
 ### Step 4: Dedup check
 
-Before reacting, check if you have already reacted to this message with this emoji (e.g., via the read skill's acknowledge-do-report workflow with `eyes` or `white_check_mark`). If the reaction already exists, skip silently — do not double-react.
+Before reacting, check if you have already reacted to this message with this emoji:
 
 ```bash
-EXISTING=$(curl -s -H "Authorization: Bearer $SLACK_TOKEN" \
-  "https://slack.com/api/reactions.get?channel=${CHANNEL_ID}&timestamp=${MESSAGE_TS}" \
-  | jq -r ".message.reactions[]? | select(.name == \"${EMOJI}\") | .users[]" 2>/dev/null)
+"${SCRIPTS_DIR}/slack-react" --check "${CHANNEL_ID}" "${MESSAGE_TS}" "${EMOJI}"
 ```
 
-If your own user ID appears in `EXISTING`, the reaction is already there. Skip and confirm: "Already reacted with :emoji:".
+If the output is `yes`, the reaction is already there. Skip and confirm: "Already reacted with :emoji:".
 
 ### Step 5: Add the reaction
 
 ```bash
-curl -s -X POST -H "Authorization: Bearer $SLACK_TOKEN" \
-  -H "Content-type: application/json" \
-  -d "{\"channel\":\"$CHANNEL_ID\",\"timestamp\":\"$MESSAGE_TS\",\"name\":\"$EMOJI\"}" \
-  https://slack.com/api/reactions.add
+"${SCRIPTS_DIR}/slack-react" "${CHANNEL_ID}" "${MESSAGE_TS}" "${EMOJI}"
 ```
 
 ### Step 6: Confirm
