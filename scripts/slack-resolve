@@ -74,7 +74,7 @@ resolve_name_to_id() {
   users=$(curl -s -H "Authorization: Bearer ${SLACK_TOKEN}" "https://slack.com/api/users.list?limit=200")
   if [ "$(echo "${users}" | jq -r '.ok')" = "true" ]; then
     # Bulk-write user cache (avoid pipe subshell)
-    echo "${users}" | jq -r '.members[] | "\(.id)=\(.profile.display_name // .profile.real_name // .name)"' >> "${USER_CACHE}.tmp"
+    echo "${users}" | jq -r '.members[] | "\(.id)=\(if (.profile.display_name // "") != "" then .profile.display_name else (.profile.real_name // .name // "") end)"' >> "${USER_CACHE}.tmp"
     sort -u -t= -k1,1 "${USER_CACHE}" "${USER_CACHE}.tmp" > "${USER_CACHE}.new" 2>/dev/null || true
     mv "${USER_CACHE}.new" "${USER_CACHE}"
     rm -f "${USER_CACHE}.tmp"
