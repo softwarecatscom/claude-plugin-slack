@@ -145,7 +145,15 @@ The script auto-resolves `@Name` to proper Slack mentions using the resolve cach
 
 Keep responses concise — summary and key details, not a wall of text.
 
-**h) Move to the next message.**
+**h) Scan for commitments.** After sending a reply, re-read the text you just sent and identify any commitments — statements where you promised to do something in the future. Use your judgment to detect the **intent**, not just specific phrases. Examples of commitment language include "I'll update", "will RFC", "going to send", "plan to investigate", "let me create" — but any statement that a reasonable reader would interpret as "this agent is going to do X" counts.
+
+For **each** detected commitment:
+1. **Can you execute it right now?** Do it immediately — send the RFC, update the file, create the issue, whatever you promised. Then continue.
+2. **Cannot execute now?** Create a tracked task via `TaskCreate` with the commitment text and context (who you promised, in which channel, what message). This ensures it is not lost.
+
+Do **not** advance to the next message until all detected commitments are resolved (executed or tracked). This is the automated enforcement of step (f) — it catches commitments that slip through.
+
+**i) Move to the next message.**
 
 ### Step 7: Update cursor
 

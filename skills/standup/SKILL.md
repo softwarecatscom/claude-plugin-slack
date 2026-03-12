@@ -39,6 +39,11 @@ Every standup includes all of the following:
 - Running jobs (cron IDs, polling status)
 - Linear backlog status (how many issues in each state)
 
+### Tracked tasks (todos)
+- Active tasks created via `TaskCreate` during this session
+- Gather from: `TaskList` — include task ID, description, and status (in_progress, pending, completed)
+- If no tracked tasks exist, say "None"
+
 ### Pending
 - Items waiting on external input
 - Deferred work, follow-ups needed
@@ -74,6 +79,8 @@ Every standup includes all of the following:
 
 **State:** master @ v0.11.4, clean working tree, Slack polling active (job 489f843a)
 
+**Tracked tasks:** None
+
 **Pending:**
 - F3 Linear MCP access confirmation
 
@@ -102,6 +109,10 @@ Check Linear for assigned issues:
 - Use `list_issues` with team "Agents" to see backlog state
 - Note which are In Progress, Done (recently), or Backlog
 
+Check tracked tasks:
+- Use `TaskList` to get all tasks created in this session
+- Include any that are in_progress or pending (not yet completed)
+
 Review the conversation history for:
 - Slack messages acted on
 - Decisions made
@@ -111,7 +122,7 @@ Review the conversation history for:
 
 ### Step 2: Format the report
 
-Assemble the gathered data into all seven sections. **Session** comes first. Keep it concise — bullet points, not paragraphs. The **State** section is a single line. **Pending** and **Team** can be omitted if truly empty.
+Assemble the gathered data into all eight sections. **Session** comes first. Keep it concise — bullet points, not paragraphs. The **State** section is a single line. **Pending** and **Team** can be omitted if truly empty.
 
 ### Step 3: Post (default)
 

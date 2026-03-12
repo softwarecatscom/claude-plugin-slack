@@ -1,0 +1,50 @@
+#!/usr/bin/env bash
+# Scan outgoing text for explicit future-tense commitments.
+#
+# Usage:
+#   echo "I'll update the skill and will RFC the change" | slack-scan-commitments
+#   slack-scan-commitments "I'll update the skill and will RFC the change"
+#
+# Output: One commitment phrase per line, or nothing if none detected.
+# Exit code: 0 if commitments found, 1 if none.
+
+set -euo pipefail
+
+# Accept text from argument or stdin
+if [ $# -gt 0 ]; then
+  TEXT="$*"
+else
+  TEXT=$(cat)
+fi
+
+[ -z "${TEXT}" ] && exit 1
+
+# Patterns that indicate an explicit commitment to future action.
+# Scoped narrowly to avoid false positives on casual phrasing.
+# Each pattern is an extended regex matched case-insensitively.
+PATTERNS=(
+  "\\bI'll [a-z]+"
+  "\\bI will [a-z]+"
+  "\\bwill (RFC|send|update|create|add|fix|implement|write|build|deploy|push|release|post|share|check|review|investigate|look into|follow up|ping|ask|tag|move|close|open|merge|revert|refactor|test)"
+  "\\bgoing to (RFC|send|update|create|add|fix|implement|write|build|deploy|push|release|post|share|check|review|investigate|follow up|ping|ask|tag|move|close|open|merge|revert|refactor|test)"
+  "\\bplan to [a-z]+"
+  "\\babout to [a-z]+"
+  "\\bintend to [a-z]+"
+  "\\blet me (RFC|send|update|create|add|fix|implement|write|build|deploy|push|release|post|share|check|review|follow up|ping|ask)"
+)
+
+FOUND=()
+
+for pattern in "${PATTERNS[@]}"; do
+  while IFS= read -r match; do
+    [ -n "${match}" ] && FOUND+=("${match}")
+  done < <(echo "${TEXT}" | grep -oiE "${pattern}" 2>/dev/null || true)
+done
+
+# Deduplicate and output
+if [ ${#FOUND[@]} -eq 0 ]; then
+  exit 1
+fi
+
+printf '%s\n' "${FOUND[@]}" | sort -uf
+exit 0
