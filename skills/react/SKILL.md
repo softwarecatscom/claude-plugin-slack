@@ -5,12 +5,35 @@ description: React to a Slack message with an emoji. Use when the user says "rea
 
 # React to Slack Message
 
-Add an emoji reaction to the most recently read message.
+Add an emoji reaction to a Slack message. When invoked with no arguments, autonomously pick the most appropriate message and emoji from recent read context.
 
 ## Arguments
 
-- `emoji` — emoji name without colons (e.g., `thumbsup`, `eyes`, `white_check_mark`)
-- `author` — (optional) if the user specifies a message by author name (e.g., "react to rogue1's message"), resolve the name and find their most recent message in the channel
+All arguments are optional:
+
+- `emoji` — emoji name without colons (e.g., `thumbsup`, `eyes`, `white_check_mark`). If omitted, infer from message content (see Step 3).
+- `author` — narrow to a specific sender's message (e.g., "react to Z490's message"). If omitted, use the most recently read message.
+
+## Emoji Blocklist
+
+Never use these emojis autonomously: `skull`, `skull_and_crossbones`, `clown_face`, `middle_finger`, `poop`, `angry`, `rage`, `nauseated_face`, `vomiting_face`.
+
+If the user explicitly requests a blocked emoji, use it — the blocklist only applies to autonomous selection.
+
+## Safe Defaults
+
+When inferring, prefer these high-confidence mappings:
+
+| Message tone | Emoji |
+|---|---|
+| Acknowledgment, agreement, approval | `thumbsup` |
+| Looking into it, will review | `eyes` |
+| Task completed, done | `white_check_mark` |
+| Greeting, welcome | `wave` |
+| Celebration, great news, launch | `raised_hands` or `rocket` |
+| Gratitude, thanks | `pray` |
+| Funny, amusing | `joy` |
+| **Ambiguous or uncertain tone** | **`thumbsup`** (always default here — a generic reaction is better than a wrong one) |
 
 ## Scripts
 
@@ -21,25 +44,52 @@ SCRIPTS_DIR=$(find ~/.claude/plugins/cache -path "*/scc-slack/*/scripts/slack-id
 
 ## Steps
 
-1. Use the `scc-slack:token` skill to load `SLACK_TOKEN`.
+### Step 1: Load token
 
-2. Get the last-read message timestamp and channel from `~/.claude/slack-cursors.conf`. The most recently updated entry is the target:
-   ```bash
-   tail -1 ~/.claude/slack-cursors.conf | IFS='=' read -r CHANNEL_ID MESSAGE_TS
-   ```
+Use the `scc-slack:token` skill to load `SLACK_TOKEN`.
 
-3. **If an author name was specified**, resolve to a user ID:
-   ```bash
-   "${SCRIPTS_DIR}/slack-resolve" --name "<author_name>"
-   ```
-   Then scan the recently fetched messages for one with a matching `.user` field.
+### Step 2: Determine the target message
 
-4. Add the reaction:
-   ```bash
-   curl -s -X POST -H "Authorization: Bearer $SLACK_TOKEN" \
-     -H "Content-type: application/json" \
-     -d "{\"channel\":\"$CHANNEL_ID\",\"timestamp\":\"$MESSAGE_TS\",\"name\":\"$EMOJI\"}" \
-     https://slack.com/api/reactions.add
-   ```
+Get the last-read message timestamp and channel from `~/.claude/slack-cursors.conf`. The most recently updated entry is the target:
+```bash
+tail -1 ~/.claude/slack-cursors.conf | IFS='=' read -r CHANNEL_ID MESSAGE_TS
+```
 
-5. Confirm the reaction was added.
+**If an author name was specified**, resolve to a user ID:
+```bash
+"${SCRIPTS_DIR}/slack-resolve" --name "<author_name>"
+```
+Then scan the recently fetched messages for one with a matching `.user` field and use that message's `ts` instead.
+
+### Step 3: Determine the emoji
+
+In priority order:
+
+1. **Explicit arg**: if the user provided an emoji name, use it exactly.
+2. **Contextual inference**: if no emoji was provided, look at the target message content in your conversation context (from the most recent `/scc-slack:read`). Match the message tone to the safe defaults table above. If you are not confident in the mapping, use `thumbsup`.
+3. **No context available**: if there is no recent read context in the conversation (e.g., invoked cold without a prior read), ask the user for the emoji name. Do not guess blind.
+
+### Step 4: Dedup check
+
+Before reacting, check if you have already reacted to this message with this emoji (e.g., via the read skill's acknowledge-do-report workflow with `eyes` or `white_check_mark`). If the reaction already exists, skip silently — do not double-react.
+
+```bash
+EXISTING=$(curl -s -H "Authorization: Bearer $SLACK_TOKEN" \
+  "https://slack.com/api/reactions.get?channel=${CHANNEL_ID}&timestamp=${MESSAGE_TS}" \
+  | jq -r ".message.reactions[]? | select(.name == \"${EMOJI}\") | .users[]" 2>/dev/null)
+```
+
+If your own user ID appears in `EXISTING`, the reaction is already there. Skip and confirm: "Already reacted with :emoji:".
+
+### Step 5: Add the reaction
+
+```bash
+curl -s -X POST -H "Authorization: Bearer $SLACK_TOKEN" \
+  -H "Content-type: application/json" \
+  -d "{\"channel\":\"$CHANNEL_ID\",\"timestamp\":\"$MESSAGE_TS\",\"name\":\"$EMOJI\"}" \
+  https://slack.com/api/reactions.add
+```
+
+### Step 6: Confirm
+
+Confirm the reaction was added. Keep it brief: "Reacted with :emoji: to [sender]'s message."
