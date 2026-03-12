@@ -7,7 +7,7 @@
 # Loads identity from ~/.claude/slack-cache/identity (run slack-identity first).
 # A message is actionable if it:
 #   - Contains <@YOUR_USER_ID>
-#   - Contains your username, display_name, or real_name (case-insensitive)
+#   - Contains @username, @display_name, or @real_name (case-insensitive, requires @ prefix)
 #   - Contains <!here>, <!channel>, or <!everyone>
 #   - Is NOT from your own user ID
 #
@@ -51,10 +51,10 @@ echo "${INPUT}" | jq --arg uid "${USER_ID}" \
      if (.text | test("<@" + $uid + ">")) then "direct"
      # Check for broadcast mentions
      elif (.text | test("<!here>|<!channel>|<!everyone>|(^|\\s)@here(\\s|$)|(^|\\s)@channel(\\s|$)|(^|\\s)@everyone(\\s|$)")) then "broadcast"
-     # Check for name mentions (case-insensitive)
-     elif ($uname != "" and (.text | ascii_downcase | test($uname | ascii_downcase))) then "name"
-     elif ($dname != "" and (.text | ascii_downcase | test($dname | ascii_downcase))) then "name"
-     elif ($rname != "" and $rname != $dname and (.text | ascii_downcase | test($rname | ascii_downcase))) then "name"
+     # Check for @name mentions (case-insensitive, require @ prefix to avoid false positives)
+     elif ($uname != "" and (.text | ascii_downcase | test("@" + ($uname | ascii_downcase)))) then "name"
+     elif ($dname != "" and (.text | ascii_downcase | test("@" + ($dname | ascii_downcase)))) then "name"
+     elif ($rname != "" and $rname != $dname and (.text | ascii_downcase | test("@" + ($rname | ascii_downcase)))) then "name"
      else null
      end
    ) as $match_type

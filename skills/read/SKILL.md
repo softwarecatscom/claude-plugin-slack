@@ -147,11 +147,23 @@ Keep responses concise — summary and key details, not a wall of text.
 
 ### Step 7: Update cursor
 
-After processing all messages (or if there were no actionable messages), update the cursor to the newest message timestamp. Use the `MESSAGES` variable from step 4 — do not re-fetch:
+After processing all messages (or if there were no actionable messages), update the cursor. **Use the NEWEST timestamp from the original fetch in step 4** — NOT the timestamp of any reply you sent.
+
 ```bash
-NEWEST=$(echo "${MESSAGES}" | jq -r '.messages[0].ts')
 "${SCRIPTS_DIR}/slack-cursor" write "${CHANNEL_ID}" "${NEWEST}"
 ```
+
+**Critical:** Your own replies have later timestamps than the fetched messages. If you advance the cursor to your reply's timestamp, you skip any messages from others that arrived *between* the fetch and your reply. Always use the `NEWEST` value stored in step 4.
+
+**If you did real work** (edited files, created issues, sent multiple replies) between fetch and cursor update, do a final catch-up fetch-and-filter before writing the cursor. Messages can arrive while you work:
+
+```bash
+CATCHUP=$("${SCRIPTS_DIR}/slack-fetch" "${CHANNEL_ID}")
+CATCHUP_NEWEST=$(echo "${CATCHUP}" | jq -r '.messages[0].ts')
+CATCHUP_ACTIONS=$(echo "${CATCHUP}" | "${SCRIPTS_DIR}/slack-filter")
+# Process any new actions, then update cursor to CATCHUP_NEWEST
+```
+
 **Tip:** Store `NEWEST` right after the fetch in step 4 so it's available here even if `MESSAGES` has been lost from context.
 
 ### Step 8: Mark channel as read
