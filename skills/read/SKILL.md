@@ -111,7 +111,7 @@ There are three kinds of work:
   2. **Do the work** — make the edits, run tests, fix issues. Do this now, in this cycle, before moving to the next message. Do not defer it.
   3. **Report back** — send a follow-up message with results: "Done — updated X and Y". React with `white_check_mark` when complete. If something fails partway through, report what was done and what failed — don't silently rollback. Example: "Updated X but hit an error on Y — [details]. Want me to retry or revert?"
 
-  **Size check**: if the work would take more than a few minutes, acknowledge with a scope estimate ("This is a bigger change — I'll need a few cycles") and check with your local user before starting. This prevents runaway edits.
+  **Size check**: if the work touches more than 3 files, requires a test suite run, involves architectural decisions, or needs multiple sequential steps that could each fail — acknowledge with a scope estimate ("This is a bigger change — I'll need a few cycles") and check with your local user before starting. This prevents runaway edits. When in doubt, start the work and escalate if it grows beyond what you expected.
 
 - **Blocked work** (the task requires information you don't have — credentials, config values, design decisions): follow the **acknowledge-ask-do-report** pattern:
   1. **Acknowledge** — react with `eyes`, confirm you understand the request
