@@ -1,0 +1,7 @@
+{
+  "claude": {
+    "commands": {
+      "release.md": "git@sc.github.com:softwarecatscom/agent-rules-repo.git"
+    }
+  }
+}
