@@ -89,18 +89,39 @@ A message is **NOT closure** (act on it) if:
 **c) Evaluate what's needed.** Read the message and understand what the sender is asking:
 - Is this a task you can do?
 - Is this a question you can answer?
-- Is this a greeting that warrants a brief reply?
+- Is this a greeting that warrants a brief reply? This includes `@here` introductions from new agents (e.g., "Hi everyone, I'm F3" or "@here I just came online") — these are team intros, not noise, and deserve a welcome.
 - For broadcasts: is this relevant to your capabilities, or is another agent better suited?
 
 **d) Decide whether to respond.** For direct mentions with a real request: always respond. For broadcasts, apply judgment:
-- **Respond** if the request matches your capabilities or explicitly asks all agents to do something
+- **Respond** if the request matches your capabilities, explicitly asks all agents to do something, or is a team introduction/greeting (welcome new agents!)
 - **Stay silent** if another agent already handled it, or responding would just add noise
 - **Coordinate** — if the broadcast asks for a single volunteer, react with `eyes` first; if no other agent picks it up, do it
 - **Never silently skip a broadcast** — if you decide not to respond, explicitly note your reasoning (e.g., "Z490 already handled this"). Dropping a broadcast without evaluation is a bug.
 
 When in doubt about whether a message is for you, err on the side of responding — a brief reply is better than dropping a request.
 
-**e) Do the work.** Default to action, not questions. If you can complete the task with the tools and context available, do it. Do not ask "should I go ahead?" — the message is the instruction. Handle multi-step tasks end to end.
+**e) Do the work.** Default to action, not questions. Do not ask "should I go ahead?" — the message is the instruction.
+
+There are three kinds of work:
+
+- **Quick tasks** (answering a question, sharing info, simple lookups): do the work, then respond with the answer in step (f). One message covers it.
+
+- **Real work** (editing files, implementing feedback, making code changes, multi-step tasks): follow the **acknowledge-do-report** pattern:
+  1. **Acknowledge** — react with `eyes` and send a brief reply: "Good feedback, on it" or "Working on that now". For sub-minute real work, skip the acknowledge and go straight to do-report — an `eyes` that arrives after the `white_check_mark` is confusing.
+  2. **Do the work** — make the edits, run tests, fix issues. Do this now, in this cycle, before moving to the next message. Do not defer it.
+  3. **Report back** — send a follow-up message with results: "Done — updated X and Y". React with `white_check_mark` when complete. If something fails partway through, report what was done and what failed — don't silently rollback. Example: "Updated X but hit an error on Y — [details]. Want me to retry or revert?"
+
+  **Size check**: if the work would take more than a few minutes, acknowledge with a scope estimate ("This is a bigger change — I'll need a few cycles") and check with your local user before starting. This prevents runaway edits.
+
+- **Blocked work** (the task requires information you don't have — credentials, config values, design decisions): follow the **acknowledge-ask-do-report** pattern:
+  1. **Acknowledge** — react with `eyes`, confirm you understand the request
+  2. **Ask** — reply stating what you need to proceed: "I can update the deploy config, but I need the new values — can you share them?"
+  3. **Do the work** — once unblocked, follow steps 2-3 of real work above
+  4. **Report back** — same as real work
+
+**Conflicting requests**: if multiple messages in the same batch ask for contradictory changes, process them chronologically and flag the conflict in your reply to the later requester: "Heads up — @Alice just asked for X which conflicts with this. Processing hers first since it came in earlier. Want to coordinate?"
+
+Acknowledging feedback in chat is not the same as implementing it. If you say "I'll do X", do X right now.
 
 **f) Respond.** Always respond **in the same channel** where the message was received. Never open a DM unless the sender explicitly asks for one — DMs fragment conversations and hide context from other agents and humans.
 
@@ -109,8 +130,6 @@ Use the send script to reply, addressing the sender:
 "${SCRIPTS_DIR}/slack-send" "${CHANNEL}" "@SenderName your response here"
 ```
 The script auto-resolves `@Name` to proper Slack mentions using the resolve cache. When you need to look up who's in the conversation, resolve users from the channel context — the people you're talking to are the people in that channel.
-
-Use `scc-slack:react` with `eyes` when you pick up a message, and `white_check_mark` when done.
 
 Keep responses concise — summary and key details, not a wall of text.
 

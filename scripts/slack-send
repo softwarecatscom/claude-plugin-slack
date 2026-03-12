@@ -42,9 +42,14 @@ if [[ ! "${CHANNEL}" =~ ^C[A-Z0-9]+$ ]]; then
   fi
 fi
 
+# Resolve broadcast mentions first (@here, @channel, @everyone → Slack encoding)
+RESOLVED_TEXT="${TEXT}"
+RESOLVED_TEXT="${RESOLVED_TEXT//@here/<!here>}"
+RESOLVED_TEXT="${RESOLVED_TEXT//@channel/<!channel>}"
+RESOLVED_TEXT="${RESOLVED_TEXT//@everyone/<!everyone>}"
+
 # Resolve @mentions in the text
 # Find all @Name patterns (word after @, may include underscores/digits)
-RESOLVED_TEXT="${TEXT}"
 while IFS= read -r name; do
   [ -z "${name}" ] && continue
   # Look up the name to get user ID
