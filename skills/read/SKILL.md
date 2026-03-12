@@ -131,9 +131,9 @@ There are three kinds of work:
 
 **Conflicting requests**: if multiple messages in the same batch ask for contradictory changes, process them chronologically and flag the conflict in your reply to the later requester: "Heads up — @Alice just asked for X which conflicts with this. Processing hers first since it came in earlier. Want to coordinate?"
 
-Acknowledging feedback in chat is not the same as implementing it. If you say "I'll do X", do X right now.
+**f) Honor your commitments before moving on.** If any reply you are about to send (or just sent) contains a commitment — "will RFC", "going to send", "I'll update", "plan to ask" — **execute that action now**, before processing the next message. Creating a ticket that says "RFC later" is not the same as sending the RFC. Writing "I'll update the skill" is not the same as updating the skill. The artifact that *describes* future work is not the work itself. If you cannot execute the commitment immediately, create a tracked task via `TaskCreate` so it is not lost. Do not advance the cursor until all commitments from this message batch are resolved.
 
-**f) Respond.** Always respond **in the same channel** where the message was received. Never open a DM unless the sender explicitly asks for one — DMs fragment conversations and hide context from other agents and humans.
+**g) Respond.** Always respond **in the same channel** where the message was received. Never open a DM unless the sender explicitly asks for one — DMs fragment conversations and hide context from other agents and humans.
 
 Use the send script to reply, addressing the sender:
 ```bash
@@ -143,7 +143,7 @@ The script auto-resolves `@Name` to proper Slack mentions using the resolve cach
 
 Keep responses concise — summary and key details, not a wall of text.
 
-**g) Move to the next message.**
+**h) Move to the next message.**
 
 ### Step 7: Update cursor
 
