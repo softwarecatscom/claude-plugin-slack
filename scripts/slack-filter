@@ -50,7 +50,7 @@ echo "${INPUT}" | jq --arg uid "${USER_ID}" \
      # Check for direct mention <@USER_ID>
      if (.text | test("<@" + $uid + ">")) then "direct"
      # Check for broadcast mentions
-     elif (.text | test("<!here>|<!channel>|<!everyone>|@here|@channel|@everyone")) then "broadcast"
+     elif (.text | test("<!here>|<!channel>|<!everyone>|(^|\\s)@here(\\s|$)|(^|\\s)@channel(\\s|$)|(^|\\s)@everyone(\\s|$)")) then "broadcast"
      # Check for name mentions (case-insensitive)
      elif ($uname != "" and (.text | ascii_downcase | test($uname | ascii_downcase))) then "name"
      elif ($dname != "" and (.text | ascii_downcase | test($dname | ascii_downcase))) then "name"

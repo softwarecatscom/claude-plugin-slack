@@ -119,6 +119,16 @@ There are three kinds of work:
   3. **Do the work** — once unblocked, follow steps 2-3 of real work above
   4. **Report back** — same as real work
 
+- **Deferred work** (valid work that can't be done right now — non-blocking review feedback, improvement ideas, future enhancements noted in conversation): follow the **acknowledge-track** pattern:
+  1. **Acknowledge** — reply in Slack confirming you've captured the item: "Good idea, tracking that for a future release"
+  2. **Track** — create a Linear issue in the **Agents** team using the Linear MCP tool (`save_issue`). Include:
+     - A clear title describing the work
+     - Description with context: who raised it, why, and any relevant details (file paths, code snippets, links)
+     - Priority: `4` (Low) for nice-to-haves, `3` (Normal) for real gaps, `2` (High) if it affects correctness
+  3. **Mention the issue** — include the Linear issue identifier (e.g., AGT-42) in your Slack reply so the requester can find it
+
+  This applies when: review feedback is marked "not a blocker" or "future pass", someone suggests an improvement you agree with but can't action now, or you discover a gap while doing other work. The goal is zero dropped items — if it's worth mentioning, it's worth tracking.
+
 **Conflicting requests**: if multiple messages in the same batch ask for contradictory changes, process them chronologically and flag the conflict in your reply to the later requester: "Heads up — @Alice just asked for X which conflicts with this. Processing hers first since it came in earlier. Want to coordinate?"
 
 Acknowledging feedback in chat is not the same as implementing it. If you say "I'll do X", do X right now.
