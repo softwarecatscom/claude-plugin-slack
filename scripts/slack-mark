@@ -1,0 +1,36 @@
+#!/usr/bin/env bash
+# Mark a Slack channel as read up to a given timestamp.
+#
+# Usage: slack-mark CHANNEL_ID TIMESTAMP
+#
+# Examples:
+#   slack-mark C0AKTEMDP9C 1773339494.183039
+
+set -euo pipefail
+
+CHANNEL_ID="${1:-}"
+TIMESTAMP="${2:-}"
+
+if [ -z "${CHANNEL_ID}" ] || [ -z "${TIMESTAMP}" ]; then
+  echo "Usage: slack-mark CHANNEL_ID TIMESTAMP" >&2
+  exit 1
+fi
+
+# Load token
+SLACK_TOKEN=$(cat "$(dirname "$(which slack)")/.slack" 2>/dev/null)
+if [ -z "${SLACK_TOKEN}" ]; then
+  echo "ERROR: No Slack token found. Run /scc-slack:setup first." >&2
+  exit 1
+fi
+
+RESPONSE=$(curl -s -X POST https://slack.com/api/conversations.mark \
+  -H "Authorization: Bearer ${SLACK_TOKEN}" \
+  -H "Content-type: application/json" \
+  -d "{\"channel\":\"${CHANNEL_ID}\",\"ts\":\"${TIMESTAMP}\"}")
+
+if [ "$(echo "${RESPONSE}" | jq -r '.ok')" = "true" ]; then
+  echo "ok"
+else
+  echo "ERROR: $(echo "${RESPONSE}" | jq -r '.error')" >&2
+  exit 1
+fi

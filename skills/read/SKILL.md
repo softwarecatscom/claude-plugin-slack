@@ -18,6 +18,8 @@ This skill uses helper scripts in `scripts/` (found via the plugin cache). Locat
 SCRIPTS_DIR=$(find ~/.claude/plugins/cache -path "*/scc-slack/*/scripts/slack-identity" 2>/dev/null | sort -V | tail -1 | xargs dirname)
 ```
 
+**ALWAYS use the `scripts/slack-*` helpers for Slack operations.** Do NOT call the Slack API directly with curl. The scripts handle token loading, channel resolution, mention encoding (`<!here>`, `<@USERID>`), and JSON payload construction correctly. Calling the API directly bypasses this and introduces bugs (e.g., `jq --arg` escapes `!` in `<!here>`, breaking broadcast mentions). If a script doesn't exist for what you need, add one — don't inline curl calls.
+
 ## Steps
 
 ### Step 1: Load config (once per session)
@@ -169,11 +171,7 @@ CATCHUP_ACTIONS=$(echo "${CATCHUP}" | "${SCRIPTS_DIR}/slack-filter")
 ### Step 8: Mark channel as read
 
 ```bash
-SLACK_TOKEN=$(cat "$(dirname "$(which slack)")/.slack" 2>/dev/null)
-curl -s -X POST -H "Authorization: Bearer ${SLACK_TOKEN}" \
-  -H "Content-type: application/json" \
-  -d "{\"channel\":\"${CHANNEL_ID}\",\"ts\":\"${NEWEST}\"}" \
-  https://slack.com/api/conversations.mark
+"${SCRIPTS_DIR}/slack-mark" "${CHANNEL_ID}" "${NEWEST}"
 ```
 
 ## When to escalate

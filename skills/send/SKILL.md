@@ -19,6 +19,8 @@ Locate the plugin scripts once per session:
 SCRIPTS_DIR=$(find ~/.claude/plugins/cache -path "*/scc-slack/*/scripts/slack-identity" 2>/dev/null | sort -V | tail -1 | xargs dirname)
 ```
 
+**ALWAYS use `slack-send` to post messages.** Do NOT call `chat.postMessage` directly with curl. The script handles token loading, channel resolution, `@Name` → `<@USERID>` mention resolution, and broadcast encoding (`@here` → `<!here>`). Calling the API directly bypasses this and introduces bugs.
+
 ## Steps
 
 1. Use the `scc-slack:config` skill to load plugin config. If no channel was specified, use `DEFAULT_CHANNEL`.
