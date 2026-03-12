@@ -1,0 +1,81 @@
+#!/usr/bin/env bash
+# List Slack channels the bot has access to.
+#
+# Usage:
+#   slack-channels                     — list all channels
+#   slack-channels --filter PATTERN    — filter by name (case-insensitive substring)
+#   slack-channels --id CHANNEL_ID     — get info for a specific channel
+#
+# Output: ID<tab>NAME<tab>MEMBERS<tab>PURPOSE (one per line)
+
+set -euo pipefail
+
+MODE="list"
+FILTER=""
+CHANNEL_ID=""
+
+while [ $# -gt 0 ]; do
+  case "$1" in
+    --filter) MODE="filter"; FILTER="$2"; shift 2 ;;
+    --id)     MODE="id"; CHANNEL_ID="$2"; shift 2 ;;
+    *)        echo "Usage: slack-channels [--filter PATTERN | --id CHANNEL_ID]" >&2; exit 1 ;;
+  esac
+done
+
+# Load token
+SLACK_TOKEN=$(cat "$(dirname "$(which slack)")/.slack" 2>/dev/null)
+if [ -z "${SLACK_TOKEN}" ]; then
+  echo "ERROR: No Slack token found. Run /scc-slack:setup first." >&2
+  exit 1
+fi
+
+if [ "${MODE}" = "id" ]; then
+  RESPONSE=$(curl -s -H "Authorization: Bearer ${SLACK_TOKEN}" \
+    "https://slack.com/api/conversations.info?channel=${CHANNEL_ID}")
+  if [ "$(echo "${RESPONSE}" | jq -r '.ok')" = "true" ]; then
+    echo "${RESPONSE}" | jq -r '.channel | "\(.id)\t\(.name)\t\(.num_members)\t\(.purpose.value // "")"'
+  else
+    echo "ERROR: $(echo "${RESPONSE}" | jq -r '.error')" >&2
+    exit 1
+  fi
+  exit 0
+fi
+
+# List all channels — try public+private, fall back to public-only
+CURSOR=""
+ALL_CHANNELS="[]"
+
+while true; do
+  URL="https://slack.com/api/conversations.list?types=public_channel,private_channel&limit=200"
+  [ -n "${CURSOR}" ] && URL="${URL}&cursor=${CURSOR}"
+
+  RESPONSE=$(curl -s -H "Authorization: Bearer ${SLACK_TOKEN}" "${URL}")
+
+  # Fall back to public-only if missing_scope
+  if echo "${RESPONSE}" | jq -e '.ok == false and .error == "missing_scope"' >/dev/null 2>&1; then
+    URL="https://slack.com/api/conversations.list?types=public_channel&limit=200"
+    [ -n "${CURSOR}" ] && URL="${URL}&cursor=${CURSOR}"
+    RESPONSE=$(curl -s -H "Authorization: Bearer ${SLACK_TOKEN}" "${URL}")
+  fi
+
+  if [ "$(echo "${RESPONSE}" | jq -r '.ok')" != "true" ]; then
+    echo "ERROR: $(echo "${RESPONSE}" | jq -r '.error')" >&2
+    exit 1
+  fi
+
+  # Merge channels into accumulator
+  ALL_CHANNELS=$(echo "${ALL_CHANNELS}" "${RESPONSE}" | jq -s '.[0] + (.[1].channels // [])')
+
+  # Check for next page
+  CURSOR=$(echo "${RESPONSE}" | jq -r '.response_metadata.next_cursor // ""')
+  [ -z "${CURSOR}" ] && break
+done
+
+# Apply filter if specified
+if [ "${MODE}" = "filter" ]; then
+  LOWER_FILTER=$(echo "${FILTER}" | tr '[:upper:]' '[:lower:]')
+  echo "${ALL_CHANNELS}" | jq -r --arg f "${LOWER_FILTER}" \
+    '.[] | select((.name | ascii_downcase | contains($f)) or (.purpose.value // "" | ascii_downcase | contains($f))) | "\(.id)\t\(.name)\t\(.num_members)\t\(.purpose.value // "")"'
+else
+  echo "${ALL_CHANNELS}" | jq -r '.[] | "\(.id)\t\(.name)\t\(.num_members)\t\(.purpose.value // "")"'
+fi

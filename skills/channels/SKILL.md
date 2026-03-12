@@ -7,23 +7,25 @@ description: List Slack channels the bot has access to. Use when the user says "
 
 List all public channels (and private channels if `groups:read` scope is granted).
 
+## Scripts
+
+This skill uses `scripts/slack-channels`. Locate it relative to the plugin root:
+```bash
+SCRIPTS_DIR="$(cd "$(dirname "$0")/../scripts" 2>/dev/null && pwd)" || SCRIPTS_DIR="$(dirname "$(which slack)")"
+```
+
+**ALWAYS use `slack-channels` to list channels.** Do NOT call `conversations.list` directly with curl.
+
 ## Steps
 
-1. Use the `scc-slack:token` skill to load `SLACK_TOKEN`.
+1. Use the `scc-slack:config` skill to load plugin config.
 
-2. Use the `scc-slack:config` skill to load plugin config.
-
-3. List channels via the Slack API. Try public+private first, fall back to public-only if `groups:read` is missing:
+2. List channels using the script:
    ```bash
-   RESULT=$(curl -s -H "Authorization: Bearer $SLACK_TOKEN" \
-     "https://slack.com/api/conversations.list?types=public_channel,private_channel&limit=200")
-   if echo "$RESULT" | jq -e '.ok == false and .error == "missing_scope"' >/dev/null 2>&1; then
-     RESULT=$(curl -s -H "Authorization: Bearer $SLACK_TOKEN" \
-       "https://slack.com/api/conversations.list?types=public_channel&limit=200")
-   fi
-   echo "$RESULT" | jq -r '.channels[] | "\(.id)\t\(.name)\t\(.num_members)\t\(.purpose.value // "")"'
+   "${SCRIPTS_DIR}/slack-channels"
    ```
+   To filter by name: `"${SCRIPTS_DIR}/slack-channels" --filter PATTERN`
 
-4. Present the results showing: channel name, ID, member count, and purpose/topic.
+3. Present the results showing: channel name, ID, member count, and purpose/topic.
 
-5. Note which channels are in `AUTONOMOUS_CHANNELS` (from config) for the user's reference.
+4. Note which channels are in `AUTONOMOUS_CHANNELS` (from config) for the user's reference.
