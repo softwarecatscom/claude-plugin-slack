@@ -75,7 +75,8 @@ resolve_name_to_id() {
   if [ "$(echo "${users}" | jq -r '.ok')" = "true" ]; then
     # Bulk-write user cache (avoid pipe subshell)
     echo "${users}" | jq -r '.members[] | "\(.id)=\(if (.profile.display_name // "") != "" then .profile.display_name else (.profile.real_name // .name // "") end)"' >> "${USER_CACHE}.tmp"
-    sort -u -t= -k1,1 "${USER_CACHE}" "${USER_CACHE}.tmp" > "${USER_CACHE}.new" 2>/dev/null || true
+    # Filter out empty-value lines (e.g. "UID=") before dedup so stale entries don't shadow good ones
+    grep -v '=$' "${USER_CACHE}" "${USER_CACHE}.tmp" 2>/dev/null | sort -u -t= -k1,1 > "${USER_CACHE}.new" || true
     mv "${USER_CACHE}.new" "${USER_CACHE}"
     rm -f "${USER_CACHE}.tmp"
     # Now search
