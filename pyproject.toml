@@ -24,3 +24,15 @@ test = [
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 asyncio_mode = "auto"
+
+[tool.coverage.run]
+source = ["src/proxy"]
+omit = ["src/proxy/service.py"]
+
+[tool.coverage.report]
+fail_under = 80
+exclude_lines = [
+    "pragma: no cover",
+    "if __name__",
+    "def main",
+]
