@@ -162,6 +162,8 @@ Do **not** advance to the next message until all detected commitments are resolv
 
 The cursor is auto-advanced by `slack-poll` (step 3) — you do NOT need to update it manually. `slack-poll` writes the newest fetched message timestamp to the cursor immediately after a successful API call. This prevents the race condition where agents accidentally advance the cursor to their reply's timestamp, skipping messages that arrived between fetch and reply.
 
+**Heartbeat is handled automatically** — `slack-poll` runs `slack-heartbeat` at the end of each cycle. Do NOT create a separate cron job for `/heartbeat`.
+
 ## When to escalate
 
 Involve your local user (the human at your terminal) only when:
