@@ -11,6 +11,8 @@ Send a message to a Slack channel or DM.
 
 - `channel` — channel name or ID (e.g., `general`, `C01ABC123`). Falls back to `DEFAULT_CHANNEL` from config.
 - `message` — the message text to send
+- `thread_ts` — (optional) parent message timestamp to reply in a thread
+- `broadcast` — (optional) if replying in a thread, also post to the channel
 
 ## Scripts
 
@@ -37,6 +39,16 @@ SCRIPTS_DIR=$(find ~/.claude/plugins/cache -path "*/scc-slack/*/scripts/slack-id
 4. Send the message. The script auto-resolves `@Name` to `<@USERID>` and channel names to IDs:
    ```bash
    "${SCRIPTS_DIR}/slack-send" "${CHANNEL}" "${MESSAGE}"
+   ```
+
+   **Thread replies:** When responding to a message that came from a thread (has `thread_ts` in the filter output), reply in-thread:
+   ```bash
+   "${SCRIPTS_DIR}/slack-send" --thread "${THREAD_TS}" "${CHANNEL}" "${MESSAGE}"
+   ```
+
+   To make a thread reply also visible in the channel (use sparingly):
+   ```bash
+   "${SCRIPTS_DIR}/slack-send" --thread "${THREAD_TS}" --broadcast "${CHANNEL}" "${MESSAGE}"
    ```
 
 5. Confirm delivery with the channel name.

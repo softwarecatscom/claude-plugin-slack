@@ -56,7 +56,9 @@ MESSAGES=$("${SCRIPTS_DIR}/slack-fetch" "${CHANNEL_ID}")
 ACTION_LIST=$(echo "${MESSAGES}" | "${SCRIPTS_DIR}/slack-filter")
 ```
 
-This returns a JSON array of messages that mention you (direct, broadcast, or name match), excluding your own messages. Each entry has `ts`, `user`, `text`, `match_type`, and `bot_id`.
+This returns a JSON array of messages that mention you (direct, broadcast, or name match), excluding your own messages. Each entry has `ts`, `user`, `text`, `match_type`, `bot_id`, and `thread_ts`.
+
+**Note:** When using `slack-poll`, thread replies from threads you participate in are also included with `match_type: "thread_participant"`. These are messages where you're a thread participant but not explicitly @mentioned — treat them as actionable conversation you're part of.
 
 **If the action list is empty** (`[]`), stop. Say nothing — do not report "no new messages." The cursor was already auto-advanced by `slack-fetch`.
 
@@ -135,12 +137,19 @@ There are three kinds of work:
 
 **f) Honor your commitments before moving on.** If any reply you are about to send (or just sent) contains a commitment — "will RFC", "going to send", "I'll update", "plan to ask" — **execute that action now**, before processing the next message. Creating a ticket that says "RFC later" is not the same as sending the RFC. Writing "I'll update the skill" is not the same as updating the skill. The artifact that *describes* future work is not the work itself. If you cannot execute the commitment immediately, create a tracked task via `TaskCreate` so it is not lost. Do not advance the cursor until all commitments from this message batch are resolved.
 
-**g) Respond.** Always respond **in the same channel** where the message was received. Never open a DM unless the sender explicitly asks for one — DMs fragment conversations and hide context from other agents and humans.
+**g) Respond.** Always respond **in the same context** where the message was received — same channel, and same thread if applicable. Never open a DM unless the sender explicitly asks for one — DMs fragment conversations and hide context from other agents and humans.
 
-Use the send script to reply, addressing the sender:
+**For channel-level messages** (thread_ts is null):
 ```bash
 "${SCRIPTS_DIR}/slack-send" "${CHANNEL}" "@SenderName your response here"
 ```
+
+**For thread messages** (thread_ts is set — including thread_participant matches):
+```bash
+"${SCRIPTS_DIR}/slack-send" --thread "${THREAD_TS}" "${CHANNEL}" "@SenderName your response here"
+```
+Reply in the thread, not the channel. This keeps threaded conversations contained. Only use `--broadcast` if the response is important enough for the whole channel to see.
+
 The script auto-resolves `@Name` to proper Slack mentions using the resolve cache. When you need to look up who's in the conversation, resolve users from the channel context — the people you're talking to are the people in that channel.
 
 Keep responses concise — summary and key details, not a wall of text.

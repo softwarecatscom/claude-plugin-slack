@@ -1,8 +1,9 @@
 #!/usr/bin/env bash
 # Filter Slack messages for ones that mention a specific user.
-# Reads raw conversations.history JSON from stdin, outputs only actionable messages.
+# Reads raw conversations.history or conversations.replies JSON from stdin,
+# outputs only actionable messages.
 #
-# Usage: slack-fetch CHANNEL_ID | slack-filter
+# Usage: slack-fetch CHANNEL_ID | slack-filter [--thread-participant]
 #
 # Loads identity from ~/.claude/slack-cache/identity (run slack-identity first).
 # A message is actionable if it:
@@ -10,11 +11,22 @@
 #   - Contains @username, @display_name, or @real_name (case-insensitive, requires @ prefix)
 #   - Contains <!here>, <!channel>, or <!everyone>
 #   - Is NOT from your own user ID
+#   - (with --thread-participant) Is any message from another user in a thread
+#     the agent participates in
 #
 # Output: JSON array of matching messages with metadata:
-#   [{"ts": "...", "user": "...", "text": "...", "match_type": "direct|broadcast|name"}]
+#   [{"ts": "...", "user": "...", "text": "...", "match_type": "direct|broadcast|name|thread_participant"}]
 
 set -euo pipefail
+
+# Parse flags
+THREAD_PARTICIPANT=false
+while [ $# -gt 0 ]; do
+  case "${1}" in
+    --thread-participant) THREAD_PARTICIPANT=true; shift ;;
+    *) shift ;;
+  esac
+done
 
 CACHE_DIR="${HOME}/.claude/slack-cache"
 IDENTITY_FILE="${CACHE_DIR}/identity"
@@ -52,10 +64,11 @@ fi
 echo "${INPUT}" | jq --arg uid "${USER_ID}" \
                      --arg uname "${USERNAME}" \
                      --arg dname "${DISPLAY_NAME}" \
-                     --arg rname "${REAL_NAME}" '
+                     --arg rname "${REAL_NAME}" \
+                     --argjson tp "${THREAD_PARTICIPANT}" '
 [.messages[]
  | select(.user != $uid)
- | select(.subtype == null or .subtype == "bot_message")
+ | select(.subtype == null or .subtype == "bot_message" or .subtype == "thread_broadcast")
  | . as $msg
  | (
      # Check for direct mention <@USER_ID>
@@ -66,9 +79,11 @@ echo "${INPUT}" | jq --arg uid "${USER_ID}" \
      elif ($uname != "" and (.text | ascii_downcase | test("@" + ($uname | ascii_downcase)))) then "name"
      elif ($dname != "" and (.text | ascii_downcase | test("@" + ($dname | ascii_downcase)))) then "name"
      elif ($rname != "" and $rname != $dname and (.text | ascii_downcase | test("@" + ($rname | ascii_downcase)))) then "name"
+     # Thread participant: any message in a thread we participate in
+     elif $tp then "thread_participant"
      else null
      end
    ) as $match_type
  | select($match_type != null)
- | {ts: .ts, user: .user, text: .text, match_type: $match_type, bot_id: (.bot_id // null)}
+ | {ts: .ts, user: .user, text: .text, match_type: $match_type, bot_id: (.bot_id // null), thread_ts: (.thread_ts // null)}
 ] | reverse'

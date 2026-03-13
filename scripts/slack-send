@@ -2,24 +2,37 @@
 # Send a Slack message with automatic @name and #channel resolution.
 # Resolves @DisplayName to <@USERID> and #channel to the channel ID using the resolve cache.
 #
-# Usage: slack-send CHANNEL TEXT
-#   CHANNEL — channel name (without #) or channel ID
-#   TEXT    — message text, may contain @DisplayName references
+# Usage: slack-send [--thread PARENT_TS] [--broadcast] CHANNEL TEXT
+#   CHANNEL     — channel name (without #) or channel ID
+#   TEXT        — message text, may contain @DisplayName references
+#   --thread TS — reply in a thread (TS is the parent message timestamp)
+#   --broadcast — make thread reply visible in channel (requires --thread)
 #
 # Examples:
 #   slack-send agents "@Z490 Hey, deploy is done"
-#   slack-send agents "Hello everyone"
-#   slack-send C0AKTEMDP9C "@Christo check this out"
+#   slack-send --thread 1773378707.594569 agents "Replying in thread"
+#   slack-send --thread 1773378707.594569 --broadcast agents "Thread reply visible in channel"
 
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
+# Parse optional flags
+THREAD_TS=""
+REPLY_BROADCAST=false
+while [ $# -gt 0 ]; do
+  case "${1}" in
+    --thread) THREAD_TS="${2}"; shift 2 ;;
+    --broadcast) REPLY_BROADCAST=true; shift ;;
+    *) break ;;
+  esac
+done
+
 CHANNEL="${1:-}"
 TEXT="${2:-}"
 
 if [ -z "${CHANNEL}" ] || [ -z "${TEXT}" ]; then
-  echo "Usage: slack-send CHANNEL TEXT" >&2
+  echo "Usage: slack-send [--thread PARENT_TS] [--broadcast] CHANNEL TEXT" >&2
   exit 1
 fi
 
@@ -61,12 +74,24 @@ while IFS= read -r name; do
   fi
 done < <(echo "${TEXT}" | grep -oE '@[A-Za-z][A-Za-z0-9_]+' | sed 's/^@//' | sort -u | awk '{print length, $0}' | sort -rn | cut -d' ' -f2-)
 
+# Build JSON payload
+JQ_ARGS=(--arg channel "${CHANNEL_ID}" --arg text "${RESOLVED_TEXT}")
+JQ_EXPR='{channel: $channel, text: $text}'
+
+if [ -n "${THREAD_TS}" ]; then
+  JQ_ARGS+=(--arg thread_ts "${THREAD_TS}")
+  if [ "${REPLY_BROADCAST}" = true ]; then
+    JQ_EXPR='{channel: $channel, text: $text, thread_ts: $thread_ts, reply_broadcast: true}'
+  else
+    JQ_EXPR='{channel: $channel, text: $text, thread_ts: $thread_ts}'
+  fi
+fi
+
 # Send via API
 RESPONSE=$(curl -s -X POST https://slack.com/api/chat.postMessage \
   -H "Authorization: Bearer ${SLACK_TOKEN}" \
   -H "Content-type: application/json; charset=utf-8" \
-  -d "$(jq -n --arg channel "${CHANNEL_ID}" --arg text "${RESOLVED_TEXT}" \
-    '{channel: $channel, text: $text}')")
+  -d "$(jq -n "${JQ_ARGS[@]}" "${JQ_EXPR}")")
 
 if [ "$(echo "${RESPONSE}" | jq -r '.ok')" = "true" ]; then
   echo "${RESPONSE}" | jq '{ok: .ok, ts: .message.ts, channel: .channel}'

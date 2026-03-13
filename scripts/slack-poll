@@ -58,5 +58,44 @@ for CHANNEL_NAME in "${CHANNELS[@]}"; do
   fi
 
   echo "# channel=${CHANNEL_NAME} id=${CHANNEL_ID}"
-  "${SCRIPT_DIR}/slack-fetch" "${CHANNEL_ID}" | "${SCRIPT_DIR}/slack-filter" || echo '[]'
+
+  # Fetch channel history (slack-fetch auto-advances cursor)
+  HISTORY=$("${SCRIPT_DIR}/slack-fetch" "${CHANNEL_ID}" 2>&1) || true
+
+  # Filter for mentions in channel-level messages
+  echo "${HISTORY}" | "${SCRIPT_DIR}/slack-filter" || echo '[]'
+
+  # Thread scanning: check threads we participate in for new activity
+  # Load our user ID for reply_users check
+  IDENTITY_FILE="${HOME}/.claude/slack-cache/identity"
+  if [ -f "${IDENTITY_FILE}" ]; then
+    # shellcheck disable=SC1090
+    source "${IDENTITY_FILE}"
+
+    # Read cursor for this channel (to compare against latest_reply)
+    CURSOR_FILE="${HOME}/.claude/slack-cursors.conf"
+    CHAN_CURSOR=$(grep "^${CHANNEL_ID}=" "${CURSOR_FILE}" 2>/dev/null | cut -d= -f2 || true)
+
+    # Find parent messages where we participate and have new thread activity
+    # Cap at 5 threads, sorted by latest_reply (newest first)
+    THREAD_PARENTS=$(echo "${HISTORY}" | jq -r --arg uid "${USER_ID}" --arg cursor "${CHAN_CURSOR}" '
+      [.messages // [] | .[]
+       | select(.reply_count > 0 and (.reply_users | index($uid))
+                and (if $cursor != "" then .latest_reply > $cursor else true end))
+       | {ts: .ts, latest_reply: .latest_reply}]
+      | sort_by(.latest_reply) | reverse | .[0:5] | .[].ts' 2>/dev/null) || true
+
+    # Fetch and filter each thread
+    SLACK_TOKEN=$(cat "$(dirname "$(which slack)")/.slack" 2>/dev/null) || true
+    for PARENT_TS in ${THREAD_PARENTS}; do
+      [ -z "${PARENT_TS}" ] && continue
+
+      echo "# thread=${PARENT_TS} channel=${CHANNEL_ID}"
+      REPLIES=$(curl -s -H "Authorization: Bearer ${SLACK_TOKEN}" \
+        "https://slack.com/api/conversations.replies?channel=${CHANNEL_ID}&ts=${PARENT_TS}&oldest=${CHAN_CURSOR:-0}")
+
+      # Filter thread replies with --thread-participant flag
+      echo "${REPLIES}" | "${SCRIPT_DIR}/slack-filter" --thread-participant || echo '[]'
+    done
+  fi
 done
