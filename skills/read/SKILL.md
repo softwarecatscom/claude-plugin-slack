@@ -58,7 +58,7 @@ ACTION_LIST=$(echo "${MESSAGES}" | "${SCRIPTS_DIR}/slack-filter")
 
 This returns a JSON array of messages that mention you (direct, broadcast, or name match), excluding your own messages. Each entry has `ts`, `user`, `text`, `match_type`, and `bot_id`.
 
-**If the action list is empty** (`[]`), mark the channel as read (step 7) and stop. Say nothing — do not report "no new messages." The cursor was already auto-advanced by `slack-fetch`.
+**If the action list is empty** (`[]`), stop. Say nothing — do not report "no new messages." The cursor was already auto-advanced by `slack-fetch`.
 
 ### Step 6: Process each action message
 
@@ -155,14 +155,9 @@ Do **not** advance to the next message until all detected commitments are resolv
 
 **i) Move to the next message.**
 
-### Step 7: Mark channel as read
+### Done
 
-**Note:** The cursor is auto-advanced by `slack-fetch` (step 4) — you do NOT need to update it manually. `slack-fetch` writes the newest fetched message timestamp to the cursor immediately after a successful API call. This prevents the race condition where agents accidentally advance the cursor to their reply's timestamp, skipping messages that arrived between fetch and reply.
-
-```bash
-NEWEST=$(echo "${MESSAGES}" | jq -r '.messages[0].ts // empty')
-[ -n "${NEWEST}" ] && "${SCRIPTS_DIR}/slack-mark" "${CHANNEL_ID}" "${NEWEST}"
-```
+The cursor is auto-advanced by `slack-fetch` (step 4) — you do NOT need to update it manually. `slack-fetch` writes the newest fetched message timestamp to the cursor immediately after a successful API call. This prevents the race condition where agents accidentally advance the cursor to their reply's timestamp, skipping messages that arrived between fetch and reply.
 
 ## When to escalate
 

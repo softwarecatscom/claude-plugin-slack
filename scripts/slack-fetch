@@ -38,9 +38,9 @@ if [ -z "${SLACK_TOKEN}" ]; then
   exit 1
 fi
 
-# Read cursor
-SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-CURSOR=$("${SCRIPT_DIR}/slack-cursor" read "${CHANNEL_ID}")
+# Cursor file
+CURSOR_FILE="${HOME}/.claude/slack-cursors.conf"
+CURSOR=$(grep "^${CHANNEL_ID}=" "${CURSOR_FILE}" 2>/dev/null | cut -d= -f2 || true)
 
 if [ -n "${CURSOR}" ]; then
   RESPONSE=$(curl -s -H "Authorization: Bearer ${SLACK_TOKEN}" \
@@ -54,7 +54,9 @@ fi
 if [ "${AUTO_ADVANCE}" = true ]; then
   NEWEST_TS=$(echo "${RESPONSE}" | jq -r '.messages[0].ts // empty' 2>/dev/null)
   if [ -n "${NEWEST_TS}" ]; then
-    "${SCRIPT_DIR}/slack-cursor" write "${CHANNEL_ID}" "${NEWEST_TS}" 2>/dev/null || true
+    grep -v "^${CHANNEL_ID}=" "${CURSOR_FILE}" > /tmp/slack-cursors.tmp 2>/dev/null || true
+    echo "${CHANNEL_ID}=${NEWEST_TS}" >> /tmp/slack-cursors.tmp
+    mv /tmp/slack-cursors.tmp "${CURSOR_FILE}"
   fi
 fi
 
