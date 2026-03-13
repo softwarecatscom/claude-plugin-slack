@@ -18,7 +18,7 @@ This skill uses helper scripts in `scripts/` (found via the plugin cache). Locat
 SCRIPTS_DIR=$(find ~/.claude/plugins/cache -path "*/scc-slack/*/scripts/slack-identity" 2>/dev/null | sort -V | tail -1 | xargs dirname)
 ```
 
-**ALWAYS use the `scripts/slack-*` helpers for Slack operations.** Do NOT call the Slack API directly with curl. The scripts handle token loading, channel resolution, mention encoding (`<!here>`, `<@USERID>`), and JSON payload construction correctly. Calling the API directly bypasses this and introduces bugs (e.g., `jq --arg` escapes `!` in `<!here>`, breaking broadcast mentions). If a script doesn't exist for what you need, add one — don't inline curl calls.
+**ALWAYS use the `scripts/slack-*` helpers for Slack operations.** Do NOT call the Slack API directly with curl. The scripts handle token loading, channel resolution, mention encoding (`@here` → `<!here>`, `@Name` → `<@USERID>`), and JSON payload construction correctly. Calling the API directly bypasses this and introduces bugs (e.g., Claude Code's Bash tool escapes `!` in `<!here>`, breaking broadcast mentions). If a script doesn't exist for what you need, add one — don't inline curl calls.
 
 ## Steps
 
