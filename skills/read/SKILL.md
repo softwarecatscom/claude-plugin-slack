@@ -38,29 +38,23 @@ eval "$("${SCRIPTS_DIR}/slack-identity")"
 
 This sets `USER_ID`, `USERNAME`, `DISPLAY_NAME`, and `REAL_NAME`. Keep these for the rest of the session.
 
-### Step 3: Resolve channel to ID
+### Step 3: Poll for actionable messages
+
+**ALWAYS use `slack-poll`** — never call `slack-fetch` or `slack-filter` directly. `slack-poll` handles channel resolution, cursor-based fetching, mention filtering, AND thread scanning in one call. Calling `slack-fetch` directly skips thread scanning, which means you miss thread replies entirely.
 
 ```bash
-CHANNEL_ID=$("${SCRIPTS_DIR}/slack-resolve" --channel "${CHANNEL}" | cut -d= -f1)
+POLL_OUTPUT=$("${SCRIPTS_DIR}/slack-poll")
 ```
 
-### Step 4: Fetch messages
+The output contains `# channel=NAME id=ID` headers followed by JSON arrays of filtered messages, plus `# thread=TS channel=ID` sections for threads you participate in. Parse each JSON array block for actionable messages.
 
-```bash
-MESSAGES=$("${SCRIPTS_DIR}/slack-fetch" "${CHANNEL_ID}")
-```
+Each message entry has `ts`, `user`, `text`, `match_type`, `bot_id`, and `thread_ts`. Match types include:
+- `direct` — you were @mentioned
+- `broadcast` — @here/@channel/@everyone
+- `name_match` — your name appeared in the text
+- `thread_participant` — new reply in a thread you're part of (not explicitly @mentioned, but you're a participant — treat as actionable)
 
-### Step 5: Filter for actionable messages
-
-```bash
-ACTION_LIST=$(echo "${MESSAGES}" | "${SCRIPTS_DIR}/slack-filter")
-```
-
-This returns a JSON array of messages that mention you (direct, broadcast, or name match), excluding your own messages. Each entry has `ts`, `user`, `text`, `match_type`, `bot_id`, and `thread_ts`.
-
-**Note:** When using `slack-poll`, thread replies from threads you participate in are also included with `match_type: "thread_participant"`. These are messages where you're a thread participant but not explicitly @mentioned — treat them as actionable conversation you're part of.
-
-**If the action list is empty** (`[]`), stop. Say nothing — do not report "no new messages." The cursor was already auto-advanced by `slack-fetch`.
+**If all arrays are empty** (`[]`), stop. Say nothing — do not report "no new messages." The cursor was already auto-advanced by `slack-poll`.
 
 ### Step 6: Process each action message
 
@@ -166,7 +160,7 @@ Do **not** advance to the next message until all detected commitments are resolv
 
 ### Done
 
-The cursor is auto-advanced by `slack-fetch` (step 4) — you do NOT need to update it manually. `slack-fetch` writes the newest fetched message timestamp to the cursor immediately after a successful API call. This prevents the race condition where agents accidentally advance the cursor to their reply's timestamp, skipping messages that arrived between fetch and reply.
+The cursor is auto-advanced by `slack-poll` (step 3) — you do NOT need to update it manually. `slack-poll` writes the newest fetched message timestamp to the cursor immediately after a successful API call. This prevents the race condition where agents accidentally advance the cursor to their reply's timestamp, skipping messages that arrived between fetch and reply.
 
 ## When to escalate
 
