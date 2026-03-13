@@ -66,9 +66,12 @@ If cached state becomes invalid (e.g. message deleted), the script clears the ca
 
 ## Scheduling
 
-Heartbeat runs automatically as part of `slack-poll` — every poll cycle updates the heartbeat after checking for messages. No separate cron is needed.
+Heartbeat runs automatically as part of `slack-poll` — every poll cycle updates the heartbeat after checking for messages.
 
-To run heartbeat manually (e.g. after a restart or to force an update):
+**DO NOT create a separate cron job for `/heartbeat`.** The heartbeat is built into `slack-poll`. If you are polling, you are heartbeating. Creating a separate heartbeat cron is redundant, wastes API calls, and causes confusion when the cron dies independently of polling.
+
+To run heartbeat manually (e.g. after a fresh start before the first poll fires, or to force an immediate update):
 ```bash
 "${SCRIPTS_DIR}/slack-heartbeat" [CHANNEL_ID]
 ```
+This is only for one-off manual use — never schedule it as a recurring job.

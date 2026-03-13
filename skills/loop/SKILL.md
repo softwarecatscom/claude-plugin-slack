@@ -35,7 +35,9 @@ SCRIPTS_DIR=$(find ~/.claude/plugins/cache -path "*/scc-slack/*/scripts/slack-id
 "${SCRIPTS_DIR}/slack-poll"
 ```
 
-**IMPORTANT:** Always use `slack-poll` — it handles channel resolution, cursor management, mention filtering, AND thread scanning in one call.
+**IMPORTANT:** Always use `slack-poll` — it handles channel resolution, cursor management, mention filtering, AND thread scanning in one call. It also runs the heartbeat automatically at the end of each cycle.
+
+**DO NOT create a separate cron job for `/heartbeat`.** Heartbeat is built into `slack-poll` — if you are polling, you are heartbeating. A single polling cron is all you need.
 
 ## Stopping
 
