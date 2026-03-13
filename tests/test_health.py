@@ -12,16 +12,15 @@
 
 from __future__ import annotations
 
-from contextlib import asynccontextmanager
 from unittest.mock import MagicMock
 
 import pytest
 from fastapi import FastAPI
 from httpx import ASGITransport, AsyncClient
 
-from src.proxy.cache import CacheEngine
-from src.proxy.constants import VERSION
-from src.proxy.routes import router
+from proxy.cache import CacheEngine
+from proxy.constants import VERSION
+from proxy.routes import router
 
 
 # ------------------------------------------------------------------
@@ -31,16 +30,11 @@ from src.proxy.routes import router
 
 def _make_app(cache) -> FastAPI:
     """Build a FastAPI app wired to the given cache."""
-
-    @asynccontextmanager
-    async def lifespan(app: FastAPI):
-        app.state.cache = cache
-        app.state.upstream = None
-        app.state.config = None
-        yield
-
-    app = FastAPI(lifespan=lifespan)
+    app = FastAPI()
     app.include_router(router)
+    app.state.cache = cache
+    app.state.upstream = None
+    app.state.config = None
     return app
 
 

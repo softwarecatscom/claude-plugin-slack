@@ -36,7 +36,6 @@ class CacheEngine:
     def _create_schema(self) -> None:
         self._db.exec(
             """CREATE TABLE IF NOT EXISTS cache_entries (
-                id           INTEGER PRIMARY KEY,
                 cache_key    TEXT,
                 method       TEXT,
                 params_hash  TEXT,
