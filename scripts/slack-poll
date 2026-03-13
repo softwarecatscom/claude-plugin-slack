@@ -83,11 +83,16 @@ for CHANNEL_NAME in "${CHANNELS[@]}"; do
     THREAD_HISTORY=$(curl -s -H "Authorization: Bearer ${SLACK_TOKEN}" \
       "https://slack.com/api/conversations.history?channel=${CHANNEL_ID}&limit=50")
 
+    # Use thread cursor (separate from channel cursor) for latest_reply comparison
+    THREAD_CURSOR_FILE="${HOME}/.claude/slack-thread-cursors.conf"
+    OLD_THREAD_CURSOR=$(grep "^${CHANNEL_ID}=" "${THREAD_CURSOR_FILE}" 2>/dev/null | cut -d= -f2 || true)
+    # Use whichever cursor is more relevant: thread cursor if set, else channel cursor
+    EFFECTIVE_THREAD_CURSOR="${OLD_THREAD_CURSOR:-${OLD_CURSOR}}"
+
     # Find parent messages where we participate and have new thread activity
     # Participation = we posted the parent OR we're in reply_users
-    # Uses OLD_CURSOR so we catch threads with activity since last poll
     # Cap at 5 threads, sorted by latest_reply (newest first)
-    THREAD_PARENTS=$(echo "${THREAD_HISTORY}" | jq -r --arg uid "${USER_ID}" --arg cursor "${OLD_CURSOR}" '
+    THREAD_PARENTS=$(echo "${THREAD_HISTORY}" | jq -r --arg uid "${USER_ID}" --arg cursor "${EFFECTIVE_THREAD_CURSOR}" '
       [.messages // [] | .[]
        | select(.reply_count > 0
                 and (.user == $uid or (.reply_users | index($uid)))
@@ -101,7 +106,7 @@ for CHANNEL_NAME in "${CHANNELS[@]}"; do
 
       echo "# thread=${PARENT_TS} channel=${CHANNEL_ID}"
       REPLIES=$(curl -s -H "Authorization: Bearer ${SLACK_TOKEN}" \
-        "https://slack.com/api/conversations.replies?channel=${CHANNEL_ID}&ts=${PARENT_TS}&oldest=${OLD_CURSOR:-0}")
+        "https://slack.com/api/conversations.replies?channel=${CHANNEL_ID}&ts=${PARENT_TS}&oldest=${EFFECTIVE_THREAD_CURSOR:-0}")
 
       # Strip thread_broadcast replies (already in channel output) then filter
       echo "${REPLIES}" | jq '{ok: .ok, messages: [.messages[] | select(.subtype != "thread_broadcast")]}' 2>/dev/null \
@@ -109,12 +114,30 @@ for CHANNEL_NAME in "${CHANNELS[@]}"; do
     done
   fi
 
-  # Now advance cursor to newest fetched channel message
+  # Advance channel cursor to newest fetched channel message
   NEWEST_TS=$(echo "${HISTORY}" | jq -r '.messages[0].ts // empty' 2>/dev/null)
   if [ -n "${NEWEST_TS}" ]; then
     TMPFILE=$(mktemp /tmp/slack-cursors.XXXXXX)
     grep -v "^${CHANNEL_ID}=" "${CURSOR_FILE}" > "${TMPFILE}" 2>/dev/null || true
     echo "${CHANNEL_ID}=${NEWEST_TS}" >> "${TMPFILE}"
     mv "${TMPFILE}" "${CURSOR_FILE}"
+  fi
+
+  # Advance thread cursor to newest thread reply we processed
+  # Separate from channel cursor to avoid skipping channel messages
+  THREAD_CURSOR_FILE="${HOME}/.claude/slack-thread-cursors.conf"
+  NEWEST_THREAD_TS=""
+  for PARENT_TS in ${THREAD_PARENTS:-}; do
+    LATEST=$(echo "${THREAD_HISTORY}" | jq -r --arg ts "${PARENT_TS}" '
+      .messages // [] | .[] | select(.ts == $ts) | .latest_reply // empty' 2>/dev/null)
+    if [ -n "${LATEST}" ] && [[ "${LATEST}" > "${NEWEST_THREAD_TS:-}" ]]; then
+      NEWEST_THREAD_TS="${LATEST}"
+    fi
+  done
+  if [ -n "${NEWEST_THREAD_TS}" ]; then
+    TMPFILE=$(mktemp /tmp/slack-cursors.XXXXXX)
+    grep -v "^${CHANNEL_ID}=" "${THREAD_CURSOR_FILE}" > "${TMPFILE}" 2>/dev/null || true
+    echo "${CHANNEL_ID}=${NEWEST_THREAD_TS}" >> "${TMPFILE}"
+    mv "${TMPFILE}" "${THREAD_CURSOR_FILE}"
   fi
 done
