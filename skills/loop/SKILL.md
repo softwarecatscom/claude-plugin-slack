@@ -14,18 +14,31 @@ Start a 1-minute polling cycle that monitors configured Slack channels. Delegate
 Use `/loop 1m` to schedule this prompt as a recurring cron job:
 
 ```
-check slack — for each channel in AUTONOMOUS_CHANNELS, read new messages
+Use the `scc-slack:read` skill to check for new messages in Slack.
 ```
 
 ## When the loop fires
 
-Each minute, the scheduled prompt runs. The agent should:
+Each minute, the scheduled prompt runs. The agent should use the `scc-slack:read` skill, which handles everything: fetching, filtering, evaluating, acting, and replying.
 
-1. Use the `scc-slack:config` skill to load `AUTONOMOUS_CHANNELS`.
+If there are no new messages, stay completely silent. Do not report that nothing happened.
 
-2. For each channel in `AUTONOMOUS_CHANNELS` (comma-separated), use the `scc-slack:read` skill. Read handles everything: fetching, filtering, evaluating, acting, and replying.
+## Pipeline reference
 
-3. If read produces no output for any channel (no new messages), stay completely silent. Do not report that nothing happened.
+The read skill uses these scripts under the hood. You do NOT need to call these directly — the read skill handles it. This is here for reference only:
+
+```bash
+# Locate scripts
+SCRIPTS_DIR=$(find ~/.claude/plugins/cache -path "*/scc-slack/*/scripts/slack-identity" 2>/dev/null | sort -V | tail -1 | xargs dirname)
+
+# Poll all configured channels (reads AUTONOMOUS_CHANNELS from ~/.claude/slack.conf)
+"${SCRIPTS_DIR}/slack-poll"
+
+# Or poll a specific channel by ID
+"${SCRIPTS_DIR}/slack-fetch" C0AKTEMDP9C | "${SCRIPTS_DIR}/slack-filter"
+```
+
+**Important:** Always pass a channel ID to `slack-fetch`. Omitting it causes a silent failure — no output, no error (indistinguishable from "no messages").
 
 ## Stopping
 

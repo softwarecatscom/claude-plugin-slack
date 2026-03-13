@@ -12,6 +12,7 @@ set -euo pipefail
 CHANNEL_ID="${1:-}"
 if [ -z "${CHANNEL_ID}" ]; then
   echo "Usage: slack-fetch CHANNEL_ID [--limit N]" >&2
+  echo '{"ok":false,"error":"missing_channel_id","hint":"Usage: slack-fetch CHANNEL_ID [--limit N]"}'
   exit 1
 fi
 shift
@@ -28,6 +29,7 @@ done
 SLACK_TOKEN=$(cat "$(dirname "$(which slack)")/.slack" 2>/dev/null)
 if [ -z "${SLACK_TOKEN}" ]; then
   echo "ERROR: No Slack token found. Run /scc-slack:setup first." >&2
+  echo '{"ok":false,"error":"no_token","hint":"Run /scc-slack:setup first"}'
   exit 1
 fi
 

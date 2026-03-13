@@ -30,10 +30,20 @@ eval "$(cat "${IDENTITY_FILE}")"
 # Read JSON from stdin
 INPUT=$(cat)
 
+# Detect empty input (broken pipeline — slack-fetch likely failed)
+if [ -z "${INPUT}" ]; then
+  echo "ERROR: No input received from slack-fetch. Check that slack-fetch is called with a valid channel ID." >&2
+  echo '[]'
+  exit 0
+fi
+
 # Check API response is ok
 if [ "$(echo "${INPUT}" | jq -r '.ok')" != "true" ]; then
-  echo "ERROR: API response not ok: $(echo "${INPUT}" | jq -r '.error // "unknown"')" >&2
-  exit 1
+  ERROR_MSG=$(echo "${INPUT}" | jq -r '.error // "unknown"')
+  HINT_MSG=$(echo "${INPUT}" | jq -r '.hint // empty')
+  echo "ERROR: API response not ok: ${ERROR_MSG}${HINT_MSG:+ ($HINT_MSG)}" >&2
+  echo '[]'
+  exit 0
 fi
 
 # Filter messages using jq

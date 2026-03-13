@@ -1,0 +1,62 @@
+#!/usr/bin/env bash
+# Poll configured Slack channels for new messages mentioning this bot.
+# Reads AUTONOMOUS_CHANNELS from ~/.claude/slack.conf, resolves channel names
+# to IDs, then runs slack-fetch | slack-filter for each.
+#
+# Usage: slack-poll
+#
+# Output: Per-channel JSON blocks. Each channel produces either:
+#   - A JSON array of matching messages (may be empty [])
+#   - Prefixed with a comment line: # channel=CHANNEL_NAME id=CHANNEL_ID
+#
+# Exit code: 0 always (errors are reported in output, not via exit code)
+
+set -euo pipefail
+
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+CONFIG_FILE="${HOME}/.claude/slack.conf"
+
+# Load config
+if [ ! -f "${CONFIG_FILE}" ]; then
+  echo "ERROR: No config found at ${CONFIG_FILE}. Run /scc-slack:setup first." >&2
+  echo '{"ok":false,"error":"no_config","hint":"Run /scc-slack:setup first"}'
+  exit 1
+fi
+
+# shellcheck disable=SC1090
+source "${CONFIG_FILE}"
+
+if [ -z "${AUTONOMOUS_CHANNELS:-}" ]; then
+  echo "ERROR: AUTONOMOUS_CHANNELS not set in ${CONFIG_FILE}." >&2
+  echo '{"ok":false,"error":"no_channels","hint":"Set AUTONOMOUS_CHANNELS in ~/.claude/slack.conf"}'
+  exit 1
+fi
+
+# Ensure identity is cached (needed by slack-filter)
+if [ ! -f "${HOME}/.claude/slack-cache/identity" ]; then
+  "${SCRIPT_DIR}/slack-identity" >/dev/null 2>&1 || true
+fi
+
+# Poll each channel
+IFS=',' read -ra CHANNELS <<< "${AUTONOMOUS_CHANNELS}"
+for CHANNEL_NAME in "${CHANNELS[@]}"; do
+  CHANNEL_NAME=$(echo "${CHANNEL_NAME}" | xargs)  # trim whitespace
+  [ -z "${CHANNEL_NAME}" ] && continue
+
+  # Resolve channel name to ID
+  CHANNEL_ID="${CHANNEL_NAME}"
+  if [[ ! "${CHANNEL_NAME}" =~ ^C[A-Z0-9]+$ ]]; then
+    RESOLVED=$("${SCRIPT_DIR}/slack-resolve" --channel "${CHANNEL_NAME}" 2>/dev/null | head -1 | cut -d= -f1)
+    if [ -n "${RESOLVED}" ] && [ "${RESOLVED}" != "UNKNOWN" ]; then
+      CHANNEL_ID="${RESOLVED}"
+    else
+      echo "# channel=${CHANNEL_NAME} id=UNKNOWN"
+      echo '[]'
+      echo "ERROR: Could not resolve channel '${CHANNEL_NAME}'" >&2
+      continue
+    fi
+  fi
+
+  echo "# channel=${CHANNEL_NAME} id=${CHANNEL_ID}"
+  "${SCRIPT_DIR}/slack-fetch" "${CHANNEL_ID}" 2>/dev/null | "${SCRIPT_DIR}/slack-filter" 2>/dev/null || echo '[]'
+done
