@@ -5,7 +5,6 @@
 #     "uvicorn[standard]>=0.34",
 #     "httpx>=0.28",
 #     "stoolap-python>=0.2",
-#     "tomli>=2.0",
 # ]
 # ///
 """scc-slack-proxy: Caching proxy for the Slack Web API.

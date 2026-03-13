@@ -7,6 +7,7 @@ All shared state (cache, upstream client, config) is accessed via
 
 from __future__ import annotations
 
+import asyncio
 import json
 import logging
 from typing import Any
@@ -67,7 +68,7 @@ async def proxy_slack(method: str, request: Request) -> Response:
         if method in CACHEABLE_METHODS:
             # Try cache lookup (with graceful degradation)
             try:
-                cached = cache.lookup(method, params)
+                cached = await asyncio.to_thread(cache.lookup, method, params)
             except Exception:
                 logger.exception("cache lookup failed for %s, falling through", method)
                 cached = None
@@ -101,7 +102,8 @@ async def proxy_slack(method: str, request: Request) -> Response:
             if resp_json.get("ok", False):
                 channel, thread_ts = _extract_context(params)
                 try:
-                    cache.store(
+                    await asyncio.to_thread(
+                        cache.store,
                         method=method,
                         params=params,
                         channel=channel,
@@ -138,7 +140,7 @@ async def proxy_slack(method: str, request: Request) -> Response:
         if resp_json.get("ok", False):
             req_json = _parse_json_body(body)
             try:
-                count = await invalidate_for(cache, method, req_json, resp_json)
+                count = await asyncio.to_thread(invalidate_for, cache, method, req_json, resp_json)
                 if count:
                     log_cache_invalidation(method, count)
             except Exception:
@@ -165,8 +167,8 @@ async def health(request: Request) -> dict:
     """Health check returning proxy status."""
     cache = request.app.state.cache
     try:
-        db_healthy = cache.is_healthy()
-        entry_count = cache.count()
+        db_healthy = await asyncio.to_thread(cache.is_healthy)
+        entry_count = await asyncio.to_thread(cache.count)
     except Exception:
         db_healthy = False
         entry_count = 0

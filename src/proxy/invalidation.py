@@ -148,10 +148,11 @@ INVALIDATION_MAP: dict[str, InvalidationHandler] = {
     "chat.update": _invalidate_chat_update,
     "chat.delete": _invalidate_chat_delete,
     "reactions.add": _invalidate_reactions_add,
+    "reactions.remove": _invalidate_reactions_add,  # same handler as reactions.add
 }
 
 
-async def invalidate_for(
+def invalidate_for(
     cache: CacheEngineProtocol,
     method: str,
     request_body: dict,

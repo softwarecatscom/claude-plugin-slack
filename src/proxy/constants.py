@@ -23,6 +23,7 @@ INVALIDATING_METHODS: frozenset[str] = frozenset({
     "chat.update",
     "chat.delete",
     "reactions.add",
+    "reactions.remove",
 })
 
 # Per-method TTL overrides (seconds).  Methods not listed here use DEFAULT_TTL.

@@ -12,7 +12,7 @@
 # port = 8321
 
 [cache]
-# Path to the SQLite cache database (created automatically).
+# Path to the Stoolap cache database (created automatically).
 # db_path = "/var/lib/slack-proxy/cache.db"
 
 # Default TTL in seconds for methods without a per-method override.

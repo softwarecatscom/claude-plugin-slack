@@ -149,25 +149,28 @@ class CacheEngine:
             ],
         )
 
-    def invalidate_channel(self, channel: str) -> None:
-        """Delete every cache entry that belongs to *channel*."""
+    def invalidate_channel(self, channel: str) -> int:
+        """Delete every cache entry that belongs to *channel*. Returns 0 (count not available from Stoolap)."""
         self._db.execute(
             "DELETE FROM cache_entries WHERE channel = $1", [channel]
         )
+        return 0
 
-    def invalidate_thread(self, channel: str, thread_ts: str) -> None:
-        """Delete cache entries for a specific thread in *channel*."""
+    def invalidate_thread(self, channel: str, thread_ts: str) -> int:
+        """Delete cache entries for a specific thread in *channel*. Returns 0."""
         self._db.execute(
             "DELETE FROM cache_entries WHERE channel = $1 AND thread_ts = $2",
             [channel, thread_ts],
         )
+        return 0
 
-    def invalidate_reactions(self, channel: str, timestamp: str) -> None:
-        """Delete ``reactions.get`` entries for a message identified by *channel* + *timestamp*."""
+    def invalidate_reactions(self, channel: str, timestamp: str) -> int:
+        """Delete ``reactions.get`` entries for a message. Returns 0."""
         self._db.execute(
             "DELETE FROM cache_entries WHERE method = $1 AND channel = $2 AND thread_ts = $3",
             ["reactions.get", channel, timestamp],
         )
+        return 0
 
     def count(self) -> int:
         """Return the number of entries currently in the cache (including expired)."""
