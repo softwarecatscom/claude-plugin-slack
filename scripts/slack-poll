@@ -100,7 +100,7 @@ for CHANNEL_NAME in "${CHANNELS[@]}"; do
        | {ts: .ts, latest_reply: .latest_reply}]
       | sort_by(.latest_reply) | reverse | .[0:5] | .[].ts' 2>/dev/null) || true
 
-    # Fetch and filter each thread
+    # Fetch and filter each participating thread
     for PARENT_TS in ${THREAD_PARENTS}; do
       [ -z "${PARENT_TS}" ] && continue
 
@@ -111,6 +111,36 @@ for CHANNEL_NAME in "${CHANNELS[@]}"; do
       # Strip thread_broadcast replies (already in channel output) then filter
       echo "${REPLIES}" | jq '{ok: .ok, messages: [.messages[] | select(.subtype != "thread_broadcast")]}' 2>/dev/null \
         | "${SCRIPT_DIR}/slack-filter" --thread-participant || echo '[]'
+    done
+
+    # AGT-40: Scan threads we DON'T participate in for @mentions
+    # Find threads with new activity where we're NOT in reply_users
+    # Cap at 5 threads to bound API calls
+    MENTION_PARENTS=$(echo "${THREAD_HISTORY}" | jq -r --arg uid "${USER_ID}" --arg cursor "${EFFECTIVE_THREAD_CURSOR}" '
+      [.messages // [] | .[]
+       | select(.reply_count > 0
+                and (.user != $uid)
+                and ((.reply_users | index($uid)) | not)
+                and (if $cursor != "" then .latest_reply > $cursor else true end))
+       | {ts: .ts, latest_reply: .latest_reply}]
+      | sort_by(.latest_reply) | reverse | .[0:5] | .[].ts' 2>/dev/null) || true
+
+    # Fetch replies and filter for direct @mentions only
+    for PARENT_TS in ${MENTION_PARENTS}; do
+      [ -z "${PARENT_TS}" ] && continue
+
+      REPLIES=$(curl -s -H "Authorization: Bearer ${SLACK_TOKEN}" \
+        "https://slack.com/api/conversations.replies?channel=${CHANNEL_ID}&ts=${PARENT_TS}&oldest=${EFFECTIVE_THREAD_CURSOR:-0}")
+
+      # Check if any reply mentions us — only output if there are matches
+      MENTION_MATCHES=$(echo "${REPLIES}" | jq --arg uid "${USER_ID}" '
+        {ok: .ok, messages: [.messages[] | select(.subtype != "thread_broadcast" and (.text | contains("<@" + $uid + ">"))]}
+        | select(.messages | length > 0)' 2>/dev/null) || true
+
+      if [ -n "${MENTION_MATCHES}" ]; then
+        echo "# thread=${PARENT_TS} channel=${CHANNEL_ID}"
+        echo "${MENTION_MATCHES}" | "${SCRIPT_DIR}/slack-filter" || echo '[]'
+      fi
     done
   fi
 
