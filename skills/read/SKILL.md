@@ -40,7 +40,7 @@ This sets `USER_ID`, `USERNAME`, `DISPLAY_NAME`, and `REAL_NAME`. Keep these for
 
 ### Step 3: Poll for actionable messages
 
-**ALWAYS use `slack-poll`** — never call `slack-fetch` or `slack-filter` directly. `slack-poll` handles channel resolution, cursor-based fetching, mention filtering, AND thread scanning in one call. Calling `slack-fetch` directly skips thread scanning, which means you miss thread replies entirely.
+**ALWAYS use `slack-poll`** — it handles channel resolution, cursor-based fetching, mention filtering, AND thread scanning in one call.
 
 ```bash
 POLL_OUTPUT=$("${SCRIPTS_DIR}/slack-poll")

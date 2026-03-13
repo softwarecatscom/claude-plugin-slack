@@ -35,7 +35,7 @@ SCRIPTS_DIR=$(find ~/.claude/plugins/cache -path "*/scc-slack/*/scripts/slack-id
 "${SCRIPTS_DIR}/slack-poll"
 ```
 
-**IMPORTANT:** Always use `slack-poll` — never `slack-fetch` directly. `slack-poll` handles channel resolution, cursor management, mention filtering, AND thread scanning. Using `slack-fetch` directly skips thread scanning, causing missed thread replies.
+**IMPORTANT:** Always use `slack-poll` — it handles channel resolution, cursor management, mention filtering, AND thread scanning in one call.
 
 ## Stopping
 
