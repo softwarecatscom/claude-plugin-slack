@@ -183,3 +183,6 @@ for CHANNEL_NAME in "${CHANNELS[@]}"; do
     mv "${TMPFILE}" "${THREAD_CURSOR_FILE}"
   fi
 done
+
+# Heartbeat: update agent status after polling
+"${SCRIPT_DIR}/slack-heartbeat" 2>/dev/null || true

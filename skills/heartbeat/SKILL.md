@@ -66,8 +66,9 @@ If cached state becomes invalid (e.g. message deleted), the script clears the ca
 
 ## Scheduling
 
-For continuous health monitoring, run heartbeat on a recurring schedule (e.g. every 6 minutes via `/loop 6m`):
+Heartbeat runs automatically as part of `slack-poll` — every poll cycle updates the heartbeat after checking for messages. No separate cron is needed.
 
-```
-Use the `scc-slack:heartbeat` skill to update the heartbeat.
+To run heartbeat manually (e.g. after a restart or to force an update):
+```bash
+"${SCRIPTS_DIR}/slack-heartbeat" [CHANNEL_ID]
 ```
