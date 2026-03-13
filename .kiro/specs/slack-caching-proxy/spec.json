@@ -1,0 +1,22 @@
+{
+  "featureName": "slack-caching-proxy",
+  "description": "A shared Python FastAPI caching proxy service that sits between Claude Code agents and the Slack Web API. Mirrors the Slack API faithfully (same paths, auth pass-through, same response format). Caches GET responses on disk using Stoolap, passes POST requests through with cache invalidation. Agents change one config value to use it. Auto-fallback to direct Slack calls if proxy unreachable. Deployed as systemd service.",
+  "phase": "tasks-generated",
+  "createdAt": "2026-03-13T22:30:00Z",
+  "updatedAt": "2026-03-14T01:30:00Z",
+  "language": "en",
+  "approvals": {
+    "requirements": {
+      "generated": true,
+      "approved": true
+    },
+    "design": {
+      "generated": true,
+      "approved": true
+    },
+    "tasks": {
+      "generated": true,
+      "approved": false
+    }
+  }
+}

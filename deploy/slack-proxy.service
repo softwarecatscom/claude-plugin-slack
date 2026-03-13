@@ -1,0 +1,42 @@
+# scc-slack-proxy — systemd unit file
+#
+# Install:
+#   sudo cp deploy/slack-proxy.service /etc/systemd/system/
+#   sudo systemctl daemon-reload
+#   sudo systemctl enable --now slack-proxy
+#
+# Prerequisites:
+#   - Service account:  sudo useradd -r -s /usr/sbin/nologin slack-proxy
+#   - Config directory: sudo install -d -o root -g slack-proxy -m 750 /etc/slack-proxy
+#   - State directory:  sudo install -d -o slack-proxy -g slack-proxy -m 700 /var/lib/slack-proxy
+#   - Config file:      sudo cp deploy/config.toml /etc/slack-proxy/config.toml
+
+[Unit]
+Description=scc-slack-proxy — Caching proxy for the Slack Web API
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+
+ExecStart=/usr/bin/uv run /opt/scc-slack/src/proxy/service.py --config /etc/slack-proxy/config.toml
+WorkingDirectory=/opt/scc-slack
+
+Restart=on-failure
+RestartSec=5
+
+StandardOutput=journal
+StandardError=journal
+
+# --- Service account ---
+User=slack-proxy
+Group=slack-proxy
+
+# --- Security hardening ---
+NoNewPrivileges=yes
+ProtectSystem=strict
+ReadWritePaths=/var/lib/slack-proxy
+ReadOnlyPaths=/etc/slack-proxy
+
+[Install]
+WantedBy=multi-user.target

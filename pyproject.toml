@@ -1,0 +1,26 @@
+[project]
+name = "scc-slack-proxy"
+version = "0.1.0"
+description = "Caching proxy for the Slack Web API"
+requires-python = ">=3.13"
+dependencies = [
+    "fastapi>=0.115",
+    "uvicorn[standard]>=0.34",
+    "httpx>=0.28",
+    "stoolap-python>=0.2",
+    "tomli>=2.0",
+]
+
+[project.optional-dependencies]
+test = [
+    "pytest>=8",
+    "pytest-asyncio>=0.24",
+    "pytest-cov>=5",
+    "respx>=0.22",
+    "pytest-httpx>=0.35",
+]
+
+# Run with: pytest --cov=src/proxy --cov-fail-under=80
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+asyncio_mode = "auto"

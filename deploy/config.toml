@@ -1,0 +1,38 @@
+# scc-slack-proxy reference configuration
+#
+# Copy to /etc/slack-proxy/config.toml, or point at this file with:
+#   --config deploy/config.toml
+#   SLACK_PROXY_CONFIG=deploy/config.toml
+#
+# Every value shown below is the built-in default.  Uncomment and edit
+# only the settings you need to change.
+
+[server]
+# host = "0.0.0.0"
+# port = 8321
+
+[cache]
+# Path to the SQLite cache database (created automatically).
+# db_path = "/var/lib/slack-proxy/cache.db"
+
+# Default TTL in seconds for methods without a per-method override.
+# default_ttl = 60
+
+# Per-method TTL overrides (seconds).
+# [cache.method_ttls]
+# "conversations.history" = 60
+# "conversations.replies" = 60
+# "pins.list"             = 300
+# "auth.test"             = 300
+# "users.info"            = 300
+# "users.list"            = 300
+# "conversations.list"    = 300
+# "conversations.info"    = 300
+# "reactions.get"         = 60
+
+[logging]
+# Log level: debug, info, warning, error, critical
+# level = "info"
+
+# Redact Bearer tokens in log output.
+# redact_tokens = true
