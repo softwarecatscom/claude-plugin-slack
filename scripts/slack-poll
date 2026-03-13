@@ -76,18 +76,26 @@ for CHANNEL_NAME in "${CHANNELS[@]}"; do
     # shellcheck disable=SC1090
     source "${IDENTITY_FILE}"
 
+    # Fetch recent history (last 50 messages) WITHOUT cursor for thread scanning.
+    # The cursor-filtered HISTORY only has new messages — parents posted in earlier
+    # polls won't be there. This wider fetch catches older parents with new replies.
+    SLACK_TOKEN=$(cat "$(dirname "$(which slack)")/.slack" 2>/dev/null) || true
+    THREAD_HISTORY=$(curl -s -H "Authorization: Bearer ${SLACK_TOKEN}" \
+      "https://slack.com/api/conversations.history?channel=${CHANNEL_ID}&limit=50")
+
     # Find parent messages where we participate and have new thread activity
+    # Participation = we posted the parent OR we're in reply_users
     # Uses OLD_CURSOR so we catch threads with activity since last poll
     # Cap at 5 threads, sorted by latest_reply (newest first)
-    THREAD_PARENTS=$(echo "${HISTORY}" | jq -r --arg uid "${USER_ID}" --arg cursor "${OLD_CURSOR}" '
+    THREAD_PARENTS=$(echo "${THREAD_HISTORY}" | jq -r --arg uid "${USER_ID}" --arg cursor "${OLD_CURSOR}" '
       [.messages // [] | .[]
-       | select(.reply_count > 0 and (.reply_users | index($uid))
+       | select(.reply_count > 0
+                and (.user == $uid or (.reply_users | index($uid)))
                 and (if $cursor != "" then .latest_reply > $cursor else true end))
        | {ts: .ts, latest_reply: .latest_reply}]
       | sort_by(.latest_reply) | reverse | .[0:5] | .[].ts' 2>/dev/null) || true
 
     # Fetch and filter each thread
-    SLACK_TOKEN=$(cat "$(dirname "$(which slack)")/.slack" 2>/dev/null) || true
     for PARENT_TS in ${THREAD_PARENTS}; do
       [ -z "${PARENT_TS}" ] && continue
 
