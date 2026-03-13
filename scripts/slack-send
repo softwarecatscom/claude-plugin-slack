@@ -19,21 +19,22 @@ set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
-# Parse optional flags
+# Parse all args: extract flags from any position, collect positionals
 THREAD_TS=""
 REPLY_BROADCAST=false
 UPDATE_TS=""
+POSITIONALS=()
 while [ $# -gt 0 ]; do
   case "${1}" in
     --thread) THREAD_TS="${2}"; shift 2 ;;
     --broadcast) REPLY_BROADCAST=true; shift ;;
     --update) UPDATE_TS="${2}"; shift 2 ;;
-    *) break ;;
+    *) POSITIONALS+=("${1}"); shift ;;
   esac
 done
 
-CHANNEL="${1:-}"
-TEXT="${2:-}"
+CHANNEL="${POSITIONALS[0]:-}"
+TEXT="${POSITIONALS[1]:-}"
 
 if [ -z "${CHANNEL}" ] || [ -z "${TEXT}" ]; then
   echo "Usage: slack-send [--thread PARENT_TS] [--broadcast] [--update TS] CHANNEL TEXT" >&2

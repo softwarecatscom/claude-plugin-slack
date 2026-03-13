@@ -17,25 +17,26 @@
 
 set -euo pipefail
 
-CHANNEL_ID="${1:-}"
-if [ -z "${CHANNEL_ID}" ]; then
-  echo "Usage: slack-fetch CHANNEL_ID [--limit N]" >&2
-  echo '{"ok":false,"error":"missing_channel_id","hint":"Usage: slack-fetch CHANNEL_ID [--limit N]"}'
-  exit 1
-fi
-shift
-
+# Parse all args: extract flags from any position, collect positionals
 LIMIT=20
 AUTO_ADVANCE=true
 FETCH_PINS=false
+POSITIONALS=()
 while [ $# -gt 0 ]; do
   case "${1}" in
     --limit) LIMIT="${2}"; shift 2 ;;
     --no-advance) AUTO_ADVANCE=false; shift ;;
     --pins) FETCH_PINS=true; shift ;;
-    *) shift ;;
+    *) POSITIONALS+=("${1}"); shift ;;
   esac
 done
+
+CHANNEL_ID="${POSITIONALS[0]:-}"
+if [ -z "${CHANNEL_ID}" ]; then
+  echo "Usage: slack-fetch CHANNEL_ID [--limit N] [--no-advance] [--pins]" >&2
+  echo '{"ok":false,"error":"missing_channel_id","hint":"Usage: slack-fetch CHANNEL_ID [--limit N] [--no-advance] [--pins]"}'
+  exit 1
+fi
 
 # Load token
 SLACK_TOKEN=$(cat "$(dirname "$(which slack)")/.slack" 2>/dev/null)
