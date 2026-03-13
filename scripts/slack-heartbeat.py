@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """Update this agent's heartbeat in the pinned Agent Status Check thread,
-then check all peers for staleness and alert if any are 2+ digits behind.
+then check all peers for staleness (2+ digits behind) and outdated versions.
 
 Usage: slack-heartbeat [CHANNEL_ID]
   CHANNEL_ID — channel containing the pinned status thread (default: from slack.conf)
@@ -153,6 +153,28 @@ def parse_digit(text: str) -> int | None:
     return None
 
 
+def parse_version(text: str) -> tuple[int, int, int] | None:
+    """Parse semver from heartbeat text (e.g. ':seven: v0.23.0' -> (0, 23, 0))."""
+    match = re.search(r"v(\d+)\.(\d+)\.(\d+)", text)
+    if match:
+        return (int(match.group(1)), int(match.group(2)), int(match.group(3)))
+    return None
+
+
+def check_version_behind(own: tuple[int, int, int], peer: tuple[int, int, int]) -> str | None:
+    """Check if peer version is behind own version.
+    Returns description string if behind, None if ok.
+    Flags: major/minor delta >= 1, patch delta >= 2.
+    """
+    if peer[0] < own[0]:
+        return f"v{peer[0]}.{peer[1]}.{peer[2]} (major {own[0] - peer[0]} behind)"
+    if peer[0] == own[0] and peer[1] < own[1]:
+        return f"v{peer[0]}.{peer[1]}.{peer[2]} (minor {own[1] - peer[1]} behind)"
+    if peer[0] == own[0] and peer[1] == own[1] and (own[2] - peer[2]) >= 2:
+        return f"v{peer[0]}.{peer[1]}.{peer[2]} (patch {own[2] - peer[2]} behind)"
+    return None
+
+
 def discover_thread(token: str, channel_id: str) -> str:
     """Find the pinned 'Agent Status Check' message ts."""
     pins = slack_api("pins.list", token, params={"channel": channel_id})
@@ -251,19 +273,38 @@ def main():
         if uid not in bot_msgs or msg["ts"] > bot_msgs[uid]["ts"]:
             bot_msgs[uid] = msg
 
-    # Check each peer's digit
+    # Check each peer's digit and version
+    own_version = parse_version(heartbeat_text)
     stale = []
+    outdated = []
     for uid, msg in bot_msgs.items():
-        their_digit = parse_digit(msg.get("text", ""))
-        if their_digit is None:
-            continue
-        gap = (digit - their_digit + 10) % 10
-        if gap >= 2:
-            display = resolve_user(uid)
-            stale.append(f"{display} (digit {their_digit}, {gap} behind)")
+        peer_text = msg.get("text", "")
+        display = resolve_user(uid)
+
+        # Digit staleness check
+        their_digit = parse_digit(peer_text)
+        if their_digit is not None:
+            gap = (digit - their_digit + 10) % 10
+            if gap >= 2:
+                stale.append(f"{display} (digit {their_digit}, {gap} behind)")
+
+        # Version check
+        if own_version:
+            peer_version = parse_version(peer_text)
+            if peer_version:
+                behind = check_version_behind(own_version, peer_version)
+                if behind:
+                    outdated.append(f"{display} on {behind}")
 
     if stale:
         alert = "@here Heartbeat check: possibly stale agents: " + ", ".join(stale)
+        subprocess.run(
+            [str(SCRIPT_DIR / "slack-send"), channel_id, alert],
+            capture_output=True,
+        )
+
+    if outdated:
+        alert = "@here Version check: outdated agents: " + ", ".join(outdated)
         subprocess.run(
             [str(SCRIPT_DIR / "slack-send"), channel_id, alert],
             capture_output=True,
