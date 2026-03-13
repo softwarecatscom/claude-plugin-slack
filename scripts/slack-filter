@@ -24,8 +24,9 @@ if [ ! -f "${IDENTITY_FILE}" ]; then
   exit 1
 fi
 
-# Load identity
-eval "$(cat "${IDENTITY_FILE}")"
+# Load identity (source is safer than eval — no command execution)
+# shellcheck disable=SC1090
+source "${IDENTITY_FILE}"
 
 # Read JSON from stdin
 INPUT=$(cat)

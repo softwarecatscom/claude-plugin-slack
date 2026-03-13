@@ -54,9 +54,10 @@ fi
 if [ "${AUTO_ADVANCE}" = true ]; then
   NEWEST_TS=$(echo "${RESPONSE}" | jq -r '.messages[0].ts // empty' 2>/dev/null)
   if [ -n "${NEWEST_TS}" ]; then
-    grep -v "^${CHANNEL_ID}=" "${CURSOR_FILE}" > /tmp/slack-cursors.tmp 2>/dev/null || true
-    echo "${CHANNEL_ID}=${NEWEST_TS}" >> /tmp/slack-cursors.tmp
-    mv /tmp/slack-cursors.tmp "${CURSOR_FILE}"
+    TMPFILE=$(mktemp /tmp/slack-cursors.XXXXXX)
+    grep -v "^${CHANNEL_ID}=" "${CURSOR_FILE}" > "${TMPFILE}" 2>/dev/null || true
+    echo "${CHANNEL_ID}=${NEWEST_TS}" >> "${TMPFILE}"
+    mv "${TMPFILE}" "${CURSOR_FILE}"
   fi
 fi
 

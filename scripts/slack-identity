@@ -41,10 +41,10 @@ REAL_NAME=$(echo "${INFO}" | jq -r '.user.profile.real_name // ""')
 # Cache it
 mkdir -p "${CACHE_DIR}"
 cat > "${CACHE_FILE}" <<EOF
-USER_ID=${USER_ID}
-USERNAME=${USERNAME}
-DISPLAY_NAME=${DISPLAY_NAME}
-REAL_NAME=${REAL_NAME}
+USER_ID="${USER_ID}"
+USERNAME="${USERNAME}"
+DISPLAY_NAME="${DISPLAY_NAME}"
+REAL_NAME="${REAL_NAME}"
 EOF
 
 cat "${CACHE_FILE}"

@@ -57,7 +57,8 @@ else
   RESPONSE=$(curl -s -X POST https://slack.com/api/reactions.add \
     -H "Authorization: Bearer ${SLACK_TOKEN}" \
     -H "Content-type: application/json" \
-    -d "{\"channel\":\"${CHANNEL_ID}\",\"timestamp\":\"${TIMESTAMP}\",\"name\":\"${EMOJI}\"}")
+    -d "$(jq -n --arg channel "${CHANNEL_ID}" --arg timestamp "${TIMESTAMP}" --arg name "${EMOJI}" \
+      '{channel: $channel, timestamp: $timestamp, name: $name}')")
   if [ "$(echo "${RESPONSE}" | jq -r '.ok')" = "true" ]; then
     echo "ok"
   elif [ "$(echo "${RESPONSE}" | jq -r '.error')" = "already_reacted" ]; then

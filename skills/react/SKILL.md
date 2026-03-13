@@ -52,7 +52,7 @@ Locate the plugin scripts once per session (see Scripts above). **Always use `sl
 
 Get the last-read message timestamp and channel from `~/.claude/slack-cursors.conf`. The most recently updated entry is the target:
 ```bash
-tail -1 ~/.claude/slack-cursors.conf | IFS='=' read -r CHANNEL_ID MESSAGE_TS
+IFS='=' read -r CHANNEL_ID MESSAGE_TS < <(tail -1 ~/.claude/slack-cursors.conf)
 ```
 
 **If an author name was specified**, resolve to a user ID:

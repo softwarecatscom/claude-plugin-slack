@@ -58,5 +58,5 @@ for CHANNEL_NAME in "${CHANNELS[@]}"; do
   fi
 
   echo "# channel=${CHANNEL_NAME} id=${CHANNEL_ID}"
-  "${SCRIPT_DIR}/slack-fetch" "${CHANNEL_ID}" 2>/dev/null | "${SCRIPT_DIR}/slack-filter" 2>/dev/null || echo '[]'
+  "${SCRIPT_DIR}/slack-fetch" "${CHANNEL_ID}" | "${SCRIPT_DIR}/slack-filter" || echo '[]'
 done
