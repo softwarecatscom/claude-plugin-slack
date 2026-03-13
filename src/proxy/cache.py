@@ -26,6 +26,7 @@ class CacheEngine:
         self._db = Database.open(db_path)
         self._default_ttl = default_ttl
         self._method_ttls: dict[str, int] = method_ttls or {}
+        self._closed = False
         self._create_schema()
 
     # ------------------------------------------------------------------
@@ -123,6 +124,9 @@ class CacheEngine:
         ).hexdigest()
         ttl = self._ttl_for(method)
 
+        # Stoolap doesn't support bytes params — decode to string
+        body_str = body.decode("utf-8") if isinstance(body, bytes) else body
+
         # Upsert: delete then insert (portable across engines)
         self._db.execute(
             "DELETE FROM cache_entries WHERE cache_key = $1", [key]
@@ -138,7 +142,7 @@ class CacheEngine:
                 params_hash,
                 channel or "",
                 thread_ts or "",
-                body,
+                body_str,
                 status_code,
                 content_type,
                 time.time(),
@@ -175,6 +179,8 @@ class CacheEngine:
 
     def is_healthy(self) -> bool:
         """Return ``True`` if the database is accessible."""
+        if self._closed:
+            return False
         try:
             self._db.query_one("SELECT 1 AS ok")
             return True
@@ -183,4 +189,5 @@ class CacheEngine:
 
     def close(self) -> None:
         """Close the underlying database connection."""
+        self._closed = True
         self._db.close()

@@ -7,7 +7,6 @@ available in CI); upstream is mocked via MagicMock with async support.
 
 from __future__ import annotations
 
-from contextlib import asynccontextmanager
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
@@ -120,17 +119,16 @@ def mock_upstream() -> MagicMock:
 
 @pytest.fixture()
 def test_app(mock_cache: MagicMock, mock_upstream: MagicMock, mock_config: ProxyConfig) -> FastAPI:
-    """Create a FastAPI test app with mocked dependencies on app.state."""
+    """Create a FastAPI test app with mocked dependencies on app.state.
 
-    @asynccontextmanager
-    async def lifespan(app: FastAPI):
-        app.state.cache = mock_cache
-        app.state.upstream = mock_upstream
-        app.state.config = mock_config
-        yield
-
-    app = FastAPI(lifespan=lifespan)
+    State is set directly (not via lifespan) because httpx ASGITransport
+    does not trigger ASGI lifespan events.
+    """
+    app = FastAPI()
     app.include_router(router)
+    app.state.cache = mock_cache
+    app.state.upstream = mock_upstream
+    app.state.config = mock_config
     return app
 
 
