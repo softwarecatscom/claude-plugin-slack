@@ -95,8 +95,9 @@ for CHANNEL_NAME in "${CHANNELS[@]}"; do
       REPLIES=$(curl -s -H "Authorization: Bearer ${SLACK_TOKEN}" \
         "https://slack.com/api/conversations.replies?channel=${CHANNEL_ID}&ts=${PARENT_TS}&oldest=${OLD_CURSOR:-0}")
 
-      # Filter thread replies with --thread-participant flag
-      echo "${REPLIES}" | "${SCRIPT_DIR}/slack-filter" --thread-participant || echo '[]'
+      # Strip thread_broadcast replies (already in channel output) then filter
+      echo "${REPLIES}" | jq '{ok: .ok, messages: [.messages[] | select(.subtype != "thread_broadcast")]}' 2>/dev/null \
+        | "${SCRIPT_DIR}/slack-filter" --thread-participant || echo '[]'
     done
   fi
 
