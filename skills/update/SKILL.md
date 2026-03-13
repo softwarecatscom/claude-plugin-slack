@@ -35,6 +35,32 @@ The caches will be rebuilt automatically on next use.
 
 Use the `scc-slack:reload` skill to stop polling, reload plugins with the new code, and restart polling.
 
-### Step 4: Confirm
+### Step 4: Verify
 
-Report the result: which version was installed, that caches were cleared, and that polling has been restarted.
+Before reporting success, complete all of these checks:
+
+1. **Scripts on disk** — confirm the new version cache directory exists:
+   ```bash
+   ls ~/.claude/plugins/cache/scc-marketplace/scc-slack/
+   ```
+   The new version directory should be present.
+
+2. **Test fetch** — run a test fetch with stderr visible to verify the scripts work:
+   ```bash
+   SCRIPTS_DIR=$(find ~/.claude/plugins/cache -path "*/scc-slack/*/scripts/slack-identity" 2>/dev/null | sort -V | tail -1 | xargs dirname)
+   "${SCRIPTS_DIR}/slack-fetch" "$(grep DEFAULT_CHANNEL ~/.claude/slack.conf | cut -d= -f2)" 2>&1 | head -5
+   ```
+   Verify the response contains `"ok":true`.
+
+3. **Polling version** — confirm the reload applied the new version path:
+   ```bash
+   find ~/.claude/plugins/cache -path "*/scc-slack/*/scripts/slack-identity" 2>/dev/null | sort -V | tail -1
+   ```
+   The path should reference the new version.
+
+4. **Version confirmation** — only report "Updated to vX.Y.Z" after all checks pass.
+
+If any check fails, diagnose the issue instead of reporting success. Common problems:
+- Old version directory still being used → re-run reload
+- `ok:false` from fetch → check token, check channel resolution
+- Missing scripts directory → update may have failed silently, retry
