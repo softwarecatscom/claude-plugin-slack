@@ -3,8 +3,13 @@
 # Automatically reads the cursor, outputs raw JSON from conversations.history,
 # and auto-advances the cursor to the newest fetched message timestamp.
 #
-# Usage: slack-fetch CHANNEL_ID [--limit N] [--no-advance]
-# Output: Raw JSON response from conversations.history
+# Usage: slack-fetch CHANNEL_ID [--limit N] [--no-advance] [--pins]
+# Output: Raw JSON response from conversations.history (or pins.list with --pins)
+#
+# Options:
+#   --limit N      — max messages to fetch (default 20)
+#   --no-advance   — don't auto-advance the cursor after fetch
+#   --pins         — fetch pinned messages instead of history (no cursor used)
 #
 # If no cursor exists, fetches the last 10 messages.
 # The cursor is auto-advanced after a successful fetch so that agents
@@ -22,10 +27,12 @@ shift
 
 LIMIT=20
 AUTO_ADVANCE=true
+FETCH_PINS=false
 while [ $# -gt 0 ]; do
   case "${1}" in
     --limit) LIMIT="${2}"; shift 2 ;;
     --no-advance) AUTO_ADVANCE=false; shift ;;
+    --pins) FETCH_PINS=true; shift ;;
     *) shift ;;
   esac
 done
@@ -36,6 +43,15 @@ if [ -z "${SLACK_TOKEN}" ]; then
   echo "ERROR: No Slack token found. Run /scc-slack:setup first." >&2
   echo '{"ok":false,"error":"no_token","hint":"Run /scc-slack:setup first"}'
   exit 1
+fi
+
+# Pins mode: fetch pinned messages and exit (no cursor involved)
+if [ "${FETCH_PINS}" = true ]; then
+  RESPONSE=$(curl -s -H "Authorization: Bearer ${SLACK_TOKEN}" \
+    "https://slack.com/api/pins.list?channel=${CHANNEL_ID}")
+  # Normalize output: extract messages from pins items for consistency
+  echo "${RESPONSE}" | jq '{ok: .ok, messages: [.items // [] | .[] | .message]}'
+  exit 0
 fi
 
 # Cursor file
