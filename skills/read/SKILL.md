@@ -56,7 +56,7 @@ Each message entry has `ts`, `user`, `text`, `match_type`, `bot_id`, and `thread
 
 **If all arrays are empty** (`[]`), stop. Say nothing — do not report "no new messages." The cursor was already auto-advanced by `slack-poll`.
 
-### Step 6: Process each action message
+### Step 4: Process each action message
 
 For **each** message on the action list, in chronological order:
 
