@@ -296,19 +296,41 @@ def main():
                 if behind:
                     outdated.append(f"{display} on {behind}")
 
+    # Dedup: check recent channel messages to avoid repeating alerts (AGT-48)
+    recent_alerts: list[str] = []
+    if stale or outdated:
+        cooldown_seconds = 600  # 10 minutes
+        now_ts = datetime.now().timestamp()
+        oldest_ts = str(now_ts - cooldown_seconds)
+        try:
+            history = slack_api("conversations.history", token, params={
+                "channel": channel_id, "limit": "30", "oldest": oldest_ts,
+            })
+            recent_alerts = [
+                m.get("text", "") for m in history.get("messages", [])
+                if m.get("bot_id") is not None
+            ]
+        except Exception:
+            pass  # If dedup check fails, fall through and post anyway
+
     if stale:
         alert = "@here Heartbeat check: possibly stale agents: " + ", ".join(stale)
-        subprocess.run(
-            [str(SCRIPT_DIR / "slack-send"), channel_id, alert],
-            capture_output=True,
-        )
+        # Skip if any recent bot message already contains a stale alert for the same agents
+        already_reported = any("Heartbeat check: possibly stale" in a for a in recent_alerts)
+        if not already_reported:
+            subprocess.run(
+                [str(SCRIPT_DIR / "slack-send"), channel_id, alert],
+                capture_output=True,
+            )
 
     if outdated:
         alert = "@here Version check: outdated agents: " + ", ".join(outdated)
-        subprocess.run(
-            [str(SCRIPT_DIR / "slack-send"), channel_id, alert],
-            capture_output=True,
-        )
+        already_reported = any("Version check: outdated" in a for a in recent_alerts)
+        if not already_reported:
+            subprocess.run(
+                [str(SCRIPT_DIR / "slack-send"), channel_id, alert],
+                capture_output=True,
+            )
 
     print(f"ok: {heartbeat_text}")
 
