@@ -35,7 +35,8 @@ class CacheEngine:
     def _create_schema(self) -> None:
         self._db.exec(
             """CREATE TABLE IF NOT EXISTS cache_entries (
-                cache_key    TEXT PRIMARY KEY,
+                id           INTEGER PRIMARY KEY,
+                cache_key    TEXT,
                 method       TEXT,
                 params_hash  TEXT,
                 channel      TEXT,
@@ -46,6 +47,9 @@ class CacheEngine:
                 created_at   REAL,
                 ttl_seconds  INTEGER
             )"""
+        )
+        self._db.exec(
+            "CREATE UNIQUE INDEX IF NOT EXISTS idx_cache_key ON cache_entries (cache_key)"
         )
         self._db.exec(
             "CREATE INDEX IF NOT EXISTS idx_cache_channel ON cache_entries (channel)"
