@@ -14,18 +14,16 @@
 from __future__ import annotations
 
 import json
-from contextlib import asynccontextmanager
-
 import httpx
 import pytest
 import respx
 from fastapi import FastAPI
 from httpx import ASGITransport, AsyncClient
 
-from src.proxy.cache import CacheEngine
-from src.proxy.constants import VERSION
-from src.proxy.routes import router
-from src.proxy.upstream import UpstreamClient
+from proxy.cache import CacheEngine
+from proxy.constants import VERSION
+from proxy.routes import router
+from proxy.upstream import UpstreamClient
 
 
 # ------------------------------------------------------------------
@@ -35,18 +33,11 @@ from src.proxy.upstream import UpstreamClient
 
 def _make_app(cache: CacheEngine, upstream: UpstreamClient) -> FastAPI:
     """Build a FastAPI app wired with the given cache and upstream."""
-
-    @asynccontextmanager
-    async def lifespan(app: FastAPI):
-        app.state.cache = cache
-        app.state.upstream = upstream
-        app.state.config = None
-        yield
-        await upstream.close()
-        cache.close()
-
-    app = FastAPI(lifespan=lifespan)
+    app = FastAPI()
     app.include_router(router)
+    app.state.cache = cache
+    app.state.upstream = upstream
+    app.state.config = None
     return app
 
 
