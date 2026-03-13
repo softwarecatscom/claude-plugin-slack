@@ -45,12 +45,12 @@ Before reporting success, complete all of these checks:
    ```
    The new version directory should be present.
 
-2. **Test poll** — run a test poll with stderr visible to verify the scripts work:
+2. **Test poll** — run a test poll to verify the scripts work:
    ```bash
    SCRIPTS_DIR=$(find ~/.claude/plugins/cache -path "*/scc-slack/*/scripts/slack-identity" 2>/dev/null | sort -V | tail -1 | xargs dirname)
-   "${SCRIPTS_DIR}/slack-poll" 2>&1 | head -5
+   "${SCRIPTS_DIR}/slack-poll" > /tmp/slack-poll-test.json 2>/tmp/slack-poll-test-err.txt
    ```
-   Verify the output contains channel headers (`# channel=...`) and no errors.
+   Read `/tmp/slack-poll-test.json` — verify the output contains channel headers (`# channel=...`) and a heartbeat line (`ok: :<digit>: v<version>`). Check `/tmp/slack-poll-test-err.txt` for errors.
 
 3. **Polling version** — confirm the reload applied the new version path:
    ```bash
@@ -60,7 +60,13 @@ Before reporting success, complete all of these checks:
 
 4. **Version confirmation** — only report "Updated to vX.Y.Z" after all checks pass.
 
+### Step 5: Update MEMORY.md
+
+Update the scc-slack version and script path in your project memory file so future sessions use the correct version:
+- `scc-slack version`: v<new_version>
+- `Script path`: the new version path from step 4
+
 If any check fails, diagnose the issue instead of reporting success. Common problems:
 - Old version directory still being used → re-run reload
-- `ok:false` from fetch → check token, check channel resolution
+- Errors in poll output → check token, check channel resolution
 - Missing scripts directory → update may have failed silently, retry
