@@ -34,26 +34,27 @@ class CacheEngine:
 
     def _create_schema(self) -> None:
         self._db.exec(
-            """
-            CREATE TABLE IF NOT EXISTS cache_entries (
+            """CREATE TABLE IF NOT EXISTS cache_entries (
                 cache_key    TEXT PRIMARY KEY,
                 method       TEXT,
                 params_hash  TEXT,
                 channel      TEXT,
                 thread_ts    TEXT,
-                response_body BLOB,
+                response_body TEXT,
                 status_code  INTEGER,
                 content_type TEXT,
                 created_at   REAL,
                 ttl_seconds  INTEGER
-            );
-            CREATE INDEX IF NOT EXISTS idx_cache_channel
-                ON cache_entries (channel);
-            CREATE INDEX IF NOT EXISTS idx_cache_method_channel
-                ON cache_entries (method, channel);
-            CREATE INDEX IF NOT EXISTS idx_cache_thread
-                ON cache_entries (channel, thread_ts);
-            """
+            )"""
+        )
+        self._db.exec(
+            "CREATE INDEX IF NOT EXISTS idx_cache_channel ON cache_entries (channel)"
+        )
+        self._db.exec(
+            "CREATE INDEX IF NOT EXISTS idx_cache_method_channel ON cache_entries (method, channel)"
+        )
+        self._db.exec(
+            "CREATE INDEX IF NOT EXISTS idx_cache_thread ON cache_entries (channel, thread_ts)"
         )
 
     # ------------------------------------------------------------------
