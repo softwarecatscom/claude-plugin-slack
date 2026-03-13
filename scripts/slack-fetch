@@ -1,11 +1,14 @@
 #!/usr/bin/env bash
 # Fetch messages from a Slack channel since the stored cursor.
-# Automatically reads the cursor and outputs raw JSON from conversations.history.
+# Automatically reads the cursor, outputs raw JSON from conversations.history,
+# and auto-advances the cursor to the newest fetched message timestamp.
 #
-# Usage: slack-fetch CHANNEL_ID [--limit N]
+# Usage: slack-fetch CHANNEL_ID [--limit N] [--no-advance]
 # Output: Raw JSON response from conversations.history
 #
 # If no cursor exists, fetches the last 10 messages.
+# The cursor is auto-advanced after a successful fetch so that agents
+# don't need to (and can't incorrectly) update it manually.
 
 set -euo pipefail
 
@@ -18,9 +21,11 @@ fi
 shift
 
 LIMIT=20
+AUTO_ADVANCE=true
 while [ $# -gt 0 ]; do
   case "${1}" in
     --limit) LIMIT="${2}"; shift 2 ;;
+    --no-advance) AUTO_ADVANCE=false; shift ;;
     *) shift ;;
   esac
 done
@@ -38,9 +43,19 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 CURSOR=$("${SCRIPT_DIR}/slack-cursor" read "${CHANNEL_ID}")
 
 if [ -n "${CURSOR}" ]; then
-  curl -s -H "Authorization: Bearer ${SLACK_TOKEN}" \
-    "https://slack.com/api/conversations.history?channel=${CHANNEL_ID}&oldest=${CURSOR}&limit=${LIMIT}"
+  RESPONSE=$(curl -s -H "Authorization: Bearer ${SLACK_TOKEN}" \
+    "https://slack.com/api/conversations.history?channel=${CHANNEL_ID}&oldest=${CURSOR}&limit=${LIMIT}")
 else
-  curl -s -H "Authorization: Bearer ${SLACK_TOKEN}" \
-    "https://slack.com/api/conversations.history?channel=${CHANNEL_ID}&limit=10"
+  RESPONSE=$(curl -s -H "Authorization: Bearer ${SLACK_TOKEN}" \
+    "https://slack.com/api/conversations.history?channel=${CHANNEL_ID}&limit=10")
 fi
+
+# Auto-advance cursor to newest fetched message timestamp
+if [ "${AUTO_ADVANCE}" = true ]; then
+  NEWEST_TS=$(echo "${RESPONSE}" | jq -r '.messages[0].ts // empty' 2>/dev/null)
+  if [ -n "${NEWEST_TS}" ]; then
+    "${SCRIPT_DIR}/slack-cursor" write "${CHANNEL_ID}" "${NEWEST_TS}" 2>/dev/null || true
+  fi
+fi
+
+echo "${RESPONSE}"
