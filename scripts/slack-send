@@ -1,17 +1,19 @@
 #!/usr/bin/env bash
-# Send a Slack message with automatic @name and #channel resolution.
+# Send or edit a Slack message with automatic @name and #channel resolution.
 # Resolves @DisplayName to <@USERID> and #channel to the channel ID using the resolve cache.
 #
-# Usage: slack-send [--thread PARENT_TS] [--broadcast] CHANNEL TEXT
+# Usage: slack-send [--thread PARENT_TS] [--broadcast] [--update TS] CHANNEL TEXT
 #   CHANNEL     — channel name (without #) or channel ID
 #   TEXT        — message text, may contain @DisplayName references
 #   --thread TS — reply in a thread (TS is the parent message timestamp)
 #   --broadcast — make thread reply visible in channel (requires --thread)
+#   --update TS — edit an existing message (TS is the message timestamp to edit)
 #
 # Examples:
 #   slack-send agents "@Z490 Hey, deploy is done"
 #   slack-send --thread 1773378707.594569 agents "Replying in thread"
 #   slack-send --thread 1773378707.594569 --broadcast agents "Thread reply visible in channel"
+#   slack-send --update 1773378707.594569 agents "Edited message text"
 
 set -euo pipefail
 
@@ -20,10 +22,12 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 # Parse optional flags
 THREAD_TS=""
 REPLY_BROADCAST=false
+UPDATE_TS=""
 while [ $# -gt 0 ]; do
   case "${1}" in
     --thread) THREAD_TS="${2}"; shift 2 ;;
     --broadcast) REPLY_BROADCAST=true; shift ;;
+    --update) UPDATE_TS="${2}"; shift 2 ;;
     *) break ;;
   esac
 done
@@ -32,7 +36,7 @@ CHANNEL="${1:-}"
 TEXT="${2:-}"
 
 if [ -z "${CHANNEL}" ] || [ -z "${TEXT}" ]; then
-  echo "Usage: slack-send [--thread PARENT_TS] [--broadcast] CHANNEL TEXT" >&2
+  echo "Usage: slack-send [--thread PARENT_TS] [--broadcast] [--update TS] CHANNEL TEXT" >&2
   exit 1
 fi
 
@@ -78,23 +82,32 @@ done < <(echo "${TEXT}" | grep -oE '@[A-Za-z][A-Za-z0-9_]+' | sed 's/^@//' | sor
 JQ_ARGS=(--arg channel "${CHANNEL_ID}" --arg text "${RESOLVED_TEXT}")
 JQ_EXPR='{channel: $channel, text: $text}'
 
-if [ -n "${THREAD_TS}" ]; then
+if [ -n "${UPDATE_TS}" ]; then
+  # Editing an existing message via chat.update
+  JQ_ARGS+=(--arg ts "${UPDATE_TS}")
+  JQ_EXPR='{channel: $channel, text: $text, ts: $ts}'
+  API_ENDPOINT="https://slack.com/api/chat.update"
+elif [ -n "${THREAD_TS}" ]; then
   JQ_ARGS+=(--arg thread_ts "${THREAD_TS}")
   if [ "${REPLY_BROADCAST}" = true ]; then
     JQ_EXPR='{channel: $channel, text: $text, thread_ts: $thread_ts, reply_broadcast: true}'
   else
     JQ_EXPR='{channel: $channel, text: $text, thread_ts: $thread_ts}'
   fi
+  API_ENDPOINT="https://slack.com/api/chat.postMessage"
+else
+  API_ENDPOINT="https://slack.com/api/chat.postMessage"
 fi
 
 # Send via API
-RESPONSE=$(curl -s -X POST https://slack.com/api/chat.postMessage \
+RESPONSE=$(curl -s -X POST "${API_ENDPOINT}" \
   -H "Authorization: Bearer ${SLACK_TOKEN}" \
   -H "Content-type: application/json; charset=utf-8" \
   -d "$(jq -n "${JQ_ARGS[@]}" "${JQ_EXPR}")")
 
 if [ "$(echo "${RESPONSE}" | jq -r '.ok')" = "true" ]; then
-  echo "${RESPONSE}" | jq '{ok: .ok, ts: .message.ts, channel: .channel}'
+  # chat.update returns .ts directly; chat.postMessage returns .message.ts
+  echo "${RESPONSE}" | jq '{ok: .ok, ts: (.message.ts // .ts), channel: .channel}'
 else
   echo "ERROR: $(echo "${RESPONSE}" | jq -r '.error')" >&2
   echo "${RESPONSE}" | jq '.' >&2
