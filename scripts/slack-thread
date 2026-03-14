@@ -1,0 +1,115 @@
+#!/usr/bin/env bash
+# Read a specific Slack thread by URL, channel+ts, or thread_ts.
+#
+# Usage:
+#   slack-thread <url>                     # Slack deep link
+#   slack-thread <channel_id> <thread_ts>  # Direct channel + ts
+#
+# Output: JSON array of thread messages (same format as slack-filter output)
+set -euo pipefail
+
+SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+
+# Source common functions (slack_curl fallback)
+# shellcheck source=slack-common
+source "${SCRIPT_DIR}/slack-common" 2>/dev/null || true
+
+# Load config
+CONFIG_FILE="${HOME}/.claude/slack.conf"
+if [ -f "${CONFIG_FILE}" ]; then
+  source "${CONFIG_FILE}"
+fi
+
+# Proxy support
+SLACK_API_BASE="${SLACK_PROXY_URL:-https://slack.com}"
+
+# Proxy fallback check
+if [ -n "${SLACK_PROXY_URL:-}" ] && [ "${SLACK_API_BASE}" != "https://slack.com" ]; then
+  if ! command -v slack_curl >/dev/null 2>&1; then
+    # slack-common not available, define minimal fallback
+    slack_curl() { command curl "$@"; }
+  fi
+fi
+
+# Load token
+SLACK_TOKEN=$(cat "$(dirname "$(which slack)")/.slack" 2>/dev/null)
+if [ -z "${SLACK_TOKEN}" ]; then
+  echo '{"ok":false,"error":"no_token","hint":"Run /scc-slack:setup first"}' >&2
+  exit 1
+fi
+
+# Parse arguments
+CHANNEL=""
+THREAD_TS=""
+
+parse_slack_url() {
+  local url="$1"
+  # Format: https://workspace.slack.com/archives/CHANNEL_ID/pTIMESTAMP
+  # The p-prefixed timestamp has no dot: p1773516874346219 → 1773516874.346219
+  if [[ "$url" =~ archives/([A-Z0-9]+)/p([0-9]+) ]]; then
+    CHANNEL="${BASH_REMATCH[1]}"
+    local raw_ts="${BASH_REMATCH[2]}"
+    # Insert dot: first 10 digits . rest
+    THREAD_TS="${raw_ts:0:10}.${raw_ts:10}"
+  fi
+  # Also handle thread_ts in query params: ?thread_ts=TIMESTAMP&cid=CHANNEL
+  if [[ "$url" =~ thread_ts=([0-9.]+) ]]; then
+    THREAD_TS="${BASH_REMATCH[1]}"
+  fi
+  if [[ "$url" =~ cid=([A-Z0-9]+) ]]; then
+    CHANNEL="${BASH_REMATCH[1]}"
+  fi
+}
+
+if [ $# -eq 0 ]; then
+  echo "Usage: slack-thread <url> OR slack-thread <channel_id> <thread_ts>" >&2
+  exit 1
+elif [ $# -eq 1 ]; then
+  # Single argument — either a URL or a thread_ts
+  if [[ "$1" == http* ]]; then
+    parse_slack_url "$1"
+  else
+    echo "ERROR: Single argument must be a Slack URL" >&2
+    exit 1
+  fi
+elif [ $# -eq 2 ]; then
+  CHANNEL="$1"
+  THREAD_TS="$2"
+fi
+
+if [ -z "${CHANNEL}" ] || [ -z "${THREAD_TS}" ]; then
+  echo "ERROR: Could not parse channel and thread_ts from input" >&2
+  exit 1
+fi
+
+# Fetch thread replies
+CURL_CMD="curl"
+if command -v slack_curl >/dev/null 2>&1; then
+  CURL_CMD="slack_curl"
+fi
+
+RESPONSE=$($CURL_CMD -s -H "Authorization: Bearer ${SLACK_TOKEN}" \
+  "${SLACK_API_BASE}/api/conversations.replies?channel=${CHANNEL}&ts=${THREAD_TS}&limit=100")
+
+# Check for errors
+OK=$(echo "$RESPONSE" | python3 -c "import json,sys; print(json.load(sys.stdin).get('ok','false'))" 2>/dev/null || echo "false")
+if [ "$OK" != "True" ] && [ "$OK" != "true" ]; then
+  echo "$RESPONSE" >&2
+  exit 1
+fi
+
+# Format output — extract messages with user, text, ts
+echo "$RESPONSE" | python3 -c "
+import json, sys
+data = json.load(sys.stdin)
+messages = data.get('messages', [])
+output = []
+for m in messages:
+    output.append({
+        'ts': m.get('ts', ''),
+        'user': m.get('user', m.get('bot_id', '?')),
+        'text': m.get('text', ''),
+        'thread_ts': m.get('thread_ts', ''),
+    })
+print(json.dumps(output, indent=2))
+"
