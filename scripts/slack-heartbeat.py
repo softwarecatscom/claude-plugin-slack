@@ -24,6 +24,26 @@ from pathlib import Path
 
 SLACK_BASE = os.environ.get("SLACK_PROXY_URL") or "https://slack.com"
 
+# Proxy fallback: if proxy is configured but unreachable, fall back to direct Slack
+_SLACK_PROXY_URL = os.environ.get("SLACK_PROXY_URL", "")
+if _SLACK_PROXY_URL and SLACK_BASE != "https://slack.com":
+    try:
+        req = urllib.request.Request(f"{SLACK_BASE}/health", method="GET")
+        urllib.request.urlopen(req, timeout=2)
+    except Exception:
+        SLACK_BASE = "https://slack.com"
+        _fallback_state = Path.home() / ".claude" / "slack-proxy-fallback-alerted"
+        _now = int(datetime.now().timestamp())
+        _last = 0
+        try:
+            _last = int(_fallback_state.read_text().strip())
+        except Exception:
+            pass
+        if (_now - _last) >= 600:
+            print(f"WARNING: Proxy {_SLACK_PROXY_URL} unreachable, falling back to direct Slack", file=sys.stderr)
+            _fallback_state.parent.mkdir(parents=True, exist_ok=True)
+            _fallback_state.write_text(str(_now))
+
 DIGIT_NAMES = {
     1: "one", 2: "two", 3: "three", 4: "four", 5: "five",
     6: "six", 7: "seven", 8: "eight", 9: "nine", 10: "keycap_ten",

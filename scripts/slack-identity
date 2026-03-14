@@ -10,6 +10,20 @@ set -euo pipefail
 # Proxy support: use proxy if configured, fall back to direct Slack
 SLACK_API_BASE="${SLACK_PROXY_URL:-https://slack.com}"
 
+# Proxy fallback: if proxy is configured but unreachable, fall back to direct Slack
+if [ -n "${SLACK_PROXY_URL:-}" ] && [ "${SLACK_API_BASE}" != "https://slack.com" ]; then
+    if ! curl -s --connect-timeout 2 "${SLACK_API_BASE}/health" >/dev/null 2>&1; then
+        SLACK_API_BASE="https://slack.com"
+        _FALLBACK_STATE="${HOME}/.claude/slack-proxy-fallback-alerted"
+        _NOW=$(date +%s)
+        _LAST=$(cat "${_FALLBACK_STATE}" 2>/dev/null || echo 0)
+        if [ $((_NOW - _LAST)) -ge 600 ]; then
+            echo "WARNING: Proxy ${SLACK_PROXY_URL} unreachable, falling back to direct Slack" >&2
+            echo "${_NOW}" > "${_FALLBACK_STATE}"
+        fi
+    fi
+fi
+
 CACHE_DIR="${HOME}/.claude/slack-cache"
 CACHE_FILE="${CACHE_DIR}/identity"
 
