@@ -2,8 +2,9 @@
 # Shell wrapper for slack-heartbeat.py
 # Runs the Python heartbeat script via uv for dependency management.
 #
-# Usage: slack-heartbeat [CHANNEL_ID]
-#   CHANNEL_ID — channel containing the pinned status thread (default: from slack.conf)
+# Usage: slack-heartbeat [--maintenance [DURATION]] [CHANNEL_ID]
+#   CHANNEL_ID  — channel containing the pinned status thread (default: from slack.conf)
+#   --maintenance [DURATION] — signal maintenance mode (skipped by peer watchdog)
 
 set -euo pipefail
 
