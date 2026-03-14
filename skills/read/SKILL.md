@@ -54,7 +54,27 @@ Each message entry has `ts`, `user`, `text`, `match_type`, `bot_id`, and `thread
 - `name_match` — your name appeared in the text
 - `thread_participant` — new reply in a thread you're part of (not explicitly @mentioned, but you're a participant — treat as actionable)
 
-**If all arrays are empty** (`[]`), stop. Say nothing — do not report "no new messages." The cursor was already auto-advanced by `slack-poll`.
+**If all arrays are empty** (`[]`), run the mention tracker tick (step 3b) and then stop. Say nothing — do not report "no new messages." The cursor was already auto-advanced by `slack-poll`.
+
+### Step 3b: Check for unresponsive @mentions
+
+After polling, tick the mention tracker to check if any @mentioned agents haven't responded:
+
+```bash
+EXPIRED=$("${SCRIPTS_DIR}/slack-mention-tracker" tick)
+```
+
+If `EXPIRED` is not `[]`, it contains entries for agents who haven't responded after 5 poll cycles (~5 minutes). For **each** expired entry, post a thread reference in the main channel so the request gains visibility:
+
+```bash
+# Build Slack deep link: remove dot from thread_ts
+LINK="https://slack.com/archives/${ENTRY_CHANNEL}/p${THREAD_TS_WITHOUT_DOT}"
+"${SCRIPTS_DIR}/slack-send" "${CHANNEL}" "Thread needs attention — @MentionedAgent hasn't responded in ~5 min: ${LINK}"
+```
+
+Replace the dot in `thread_ts` to form the deep link (e.g., `1773461177.560699` → `p1773461177560699`). Resolve the mentioned user ID to a display name before posting.
+
+This only fires once per tracked mention — the tracker marks it as alerted after the first escalation.
 
 ### Step 4: Process each action message
 
@@ -67,6 +87,14 @@ For **each** message on the action list, in chronological order:
 Cache results — the script handles this automatically across calls.
 
 Replace `<!here>`, `<!channel>`, `<!everyone>` with `@here`, `@channel`, `@everyone` when presenting messages. Do NOT try to resolve these as users.
+
+**a2) Clear tracked @mentions.** If this message is a **thread reply** (`thread_ts` is set), check if the sender is an agent you previously @mentioned in that thread. If so, they've responded — clear the tracking:
+
+```bash
+"${SCRIPTS_DIR}/slack-mention-tracker" responded "${CHANNEL}" "${THREAD_TS}" "${SENDER_USER_ID}"
+```
+
+This is safe to call even if the sender isn't tracked — the script is a no-op in that case.
 
 **b) Check for conversation closure.** Before acting, determine if this message is a **new request** or a **conversation closure**. This prevents infinite ping-pong between agents.
 
@@ -147,6 +175,16 @@ Reply in the thread, not the channel. This keeps threaded conversations containe
 The script auto-resolves `@Name` to proper Slack mentions using the resolve cache. When you need to look up who's in the conversation, resolve users from the channel context — the people you're talking to are the people in that channel.
 
 Keep responses concise — summary and key details, not a wall of text.
+
+**g2) Track @mentions to agents in threads.** If you just sent a reply **in a thread** that @mentions a specific agent (not `@here`/`@channel`/`@everyone`, but a named agent like `@Rogue1` or `@Z490`), record it for response tracking:
+
+```bash
+"${SCRIPTS_DIR}/slack-mention-tracker" add "${CHANNEL}" "${THREAD_TS}" "${MENTIONED_USER_ID}"
+```
+
+This starts the 5-cycle countdown. If the mentioned agent responds in the thread within 5 poll cycles, the tracker is automatically cleared (see step 4a2). If not, step 3b will escalate it to the main channel.
+
+Only track mentions to **other agents** — do not track mentions to humans or to yourself.
 
 **h) Scan for commitments.** After sending a reply, re-read the text you just sent and identify any commitments — statements where you promised to do something in the future. Use your judgment to detect the **intent**, not just specific phrases. Examples of commitment language include "I'll update", "will RFC", "going to send", "plan to investigate", "let me create" — but any statement that a reasonable reader would interpret as "this agent is going to do X" counts.
 

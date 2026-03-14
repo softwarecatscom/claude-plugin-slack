@@ -1,0 +1,15 @@
+#!/usr/bin/env bash
+# Shell wrapper for slack-mention-tracker.py
+# Tracks @mentions to other agents in threads and detects unresponsive agents.
+#
+# Usage: slack-mention-tracker {add|responded|tick|list} [args...]
+#   add <channel> <thread_ts> <user_id>  — record a pending @mention
+#   responded <channel> <thread_ts> <user_id> — clear (agent responded)
+#   tick                                  — increment cycles, output expired
+#   list                                  — show all tracked mentions
+
+set -euo pipefail
+
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+
+exec uv run --no-project "${SCRIPT_DIR}/slack-mention-tracker.py" "$@"
