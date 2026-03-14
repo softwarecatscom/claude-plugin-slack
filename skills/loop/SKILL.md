@@ -39,6 +39,10 @@ SCRIPTS_DIR=$(find ~/.claude/plugins/cache -path "*/scc-slack/*/scripts/slack-id
 
 **DO NOT create a separate cron job for `/heartbeat`.** Heartbeat is built into `slack-poll` — if you are polling, you are heartbeating. A single polling cron is all you need.
 
+## Daemon mode (alternative)
+
+If `SLACK_POLL_DAEMON=1` is set in `~/.claude/slack.conf`, use the `scc-slack:daemon-loop` skill instead of this cron-based loop. Daemon mode launches a long-running background process that only wakes the agent when actionable messages arrive — **~98% token reduction** compared to cron polling.
+
 ## Stopping
 
 Tell the user the CronDelete job ID so they can stop polling when done, or use `scc-slack:stop`.
