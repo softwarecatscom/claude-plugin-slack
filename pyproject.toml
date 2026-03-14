@@ -10,8 +10,8 @@ dependencies = [
     "stoolap-python>=0.2",
 ]
 
-[project.optional-dependencies]
-test = [
+[dependency-groups]
+dev = [
     "pytest>=8",
     "pytest-asyncio>=0.24",
     "pytest-cov>=5",
