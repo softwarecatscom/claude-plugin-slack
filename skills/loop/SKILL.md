@@ -5,7 +5,7 @@ description: Start a /loop 1m polling cycle for Slack channels. Use when the use
 
 # Slack Loop
 
-Start a 1-minute polling cycle that monitors configured Slack channels. Delegates all message handling to the `scc-slack:read` skill.
+Start a 1-minute polling cycle that monitors configured Slack channels.
 
 **Announce at start:** "Starting Slack polling loop (1m interval)."
 
@@ -17,9 +17,12 @@ Use `/loop 1m` to schedule this prompt as a recurring cron job:
 Use the `scc-slack:read` skill to check for new messages in Slack.
 ```
 
-## When the loop fires
+## Mode selection
 
-Each minute, the scheduled prompt runs. The agent should use the `scc-slack:read` skill, which handles everything: fetching, filtering, evaluating, acting, and replying.
+When the loop fires, check `SLACK_POLL_DAEMON` in `~/.claude/slack.conf`:
+
+- **`SLACK_POLL_DAEMON=1`**: Use the `scc-slack:daemon-loop` skill. It checks if the daemon is already running (singleton) — if yes, does nothing; if no, launches it in the background. The daemon handles polling internally and only wakes the agent when actionable messages arrive. **~98% token reduction.**
+- **Unset or `0` (default)**: Use the `scc-slack:read` skill, which handles everything: fetching, filtering, evaluating, acting, and replying.
 
 If there are no new messages, stay completely silent. Do not report that nothing happened.
 
@@ -38,10 +41,6 @@ SCRIPTS_DIR=$(find ~/.claude/plugins/cache -path "*/scc-slack/*/scripts/slack-id
 **IMPORTANT:** Always use `slack-poll` via `ctx_execute` — it handles channel resolution, cursor management, mention filtering, AND thread scanning in one call. It also runs the heartbeat automatically at the end of each cycle. Using `ctx_execute` keeps the JSON output in the sandbox and protects your context window.
 
 **DO NOT create a separate cron job for `/heartbeat`.** Heartbeat is built into `slack-poll` — if you are polling, you are heartbeating. A single polling cron is all you need.
-
-## Daemon mode (alternative)
-
-If `SLACK_POLL_DAEMON=1` is set in `~/.claude/slack.conf`, use the `scc-slack:daemon-loop` skill instead of this cron-based loop. Daemon mode launches a long-running background process that only wakes the agent when actionable messages arrive — **~98% token reduction** compared to cron polling.
 
 ## Stopping
 

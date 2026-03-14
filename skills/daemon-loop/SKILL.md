@@ -5,7 +5,7 @@ description: Start the long-poll daemon for Slack monitoring. Use when SLACK_POL
 
 # Daemon Loop
 
-Long-poll daemon mode for Slack monitoring. Replaces the cron-based `/loop 1m` with a background process that only wakes the agent when actionable messages arrive. **~98% token reduction** compared to cron polling.
+Long-poll daemon mode for Slack monitoring. Runs a background process that only wakes the agent when actionable messages arrive. **~98% token reduction** compared to cron polling.
 
 ## Prerequisites
 
@@ -13,11 +13,16 @@ Set `SLACK_POLL_DAEMON=1` in `~/.claude/slack.conf`.
 
 ## How it works
 
-1. Agent launches `slack-poll-daemon` via `Bash(run_in_background: true)`
-2. Daemon polls Slack every 60s internally — **zero token cost** while waiting
-3. Each cycle: runs `slack-poll` (fetch, filter, cursor advance, heartbeat) + mention tracker tick
-4. When actionable messages found: daemon prints output to stdout and exits
-5. Agent gets notified, processes the messages, re-launches daemon
+1. `/loop 1m` cron fires every minute and invokes this skill
+2. Skill checks if daemon is already running (singleton)
+3. If running: do nothing — daemon is healthy, waiting for messages
+4. If NOT running: launch daemon via `Bash(run_in_background: true)`
+5. Daemon polls Slack internally every 60s — **zero token cost** while waiting
+6. When actionable messages found: daemon prints output to stdout and exits
+7. Agent gets notified, processes the messages
+8. Next cron tick: daemon stopped → re-launches automatically
+
+The `/loop 1m` cron acts as a **supervisor** — if the daemon dies for any reason, the next tick restarts it.
 
 ## Setup
 
@@ -27,7 +32,18 @@ Locate scripts once per session:
 SCRIPTS_DIR=$(find ~/.claude/plugins/cache -path "*/scc-slack/*/scripts/slack-poll-daemon" 2>/dev/null | sort -V | tail -1 | xargs dirname)
 ```
 
-## Starting the daemon
+## When this skill is invoked (every cron tick)
+
+### Step 1: Check daemon status
+
+```bash
+"${SCRIPTS_DIR}/slack-poll-daemon" --status
+```
+
+- If **"running"**: stop here. Say nothing. The daemon is healthy.
+- If **"stopped"**: continue to Step 2.
+
+### Step 2: Launch daemon in background
 
 ```bash
 Bash(command: "${SCRIPTS_DIR}/slack-poll-daemon", run_in_background: true)
@@ -35,14 +51,11 @@ Bash(command: "${SCRIPTS_DIR}/slack-poll-daemon", run_in_background: true)
 
 Save the returned task ID. The daemon runs silently until actionable messages arrive.
 
-**Announce at start:** "Starting Slack daemon (long-poll mode)."
+On first launch only, announce: "Slack daemon started (long-poll mode)."
 
-## Daemon management
+### Daemon management
 
 ```bash
-# Check if daemon is running
-"${SCRIPTS_DIR}/slack-poll-daemon" --status
-
 # Stop the daemon
 "${SCRIPTS_DIR}/slack-poll-daemon" --stop
 
@@ -50,9 +63,9 @@ Save the returned task ID. The daemon runs silently until actionable messages ar
 "${SCRIPTS_DIR}/slack-poll-daemon" --once
 ```
 
-The daemon uses a PID file (`~/.claude/slack-poll-daemon.pid`) to prevent duplicate instances. If a daemon is already running, the script exits with an error.
+The daemon uses a PID file (`~/.claude/slack-poll-daemon.pid`) to prevent duplicate instances.
 
-## When the daemon exits
+## When the daemon exits (background task completes)
 
 You will be notified that the background task completed. The daemon's stdout contains the poll output — **same format as `slack-poll`**: comment lines (`# channel=NAME id=ID`, `# thread=TS channel=ID`) followed by JSON arrays of matching messages.
 
@@ -118,14 +131,6 @@ For **thread messages** (thread_ts is set):
 
 **Conflicting requests**: if multiple messages ask for contradictory changes, process chronologically — latest instruction wins unless earlier was from a higher authority.
 
-### Step 4: Re-launch the daemon
-
-After processing all messages, re-launch:
-
-```bash
-Bash(command: "${SCRIPTS_DIR}/slack-poll-daemon", run_in_background: true)
-```
-
 ## Configuration
 
 In `~/.claude/slack.conf`:
@@ -139,8 +144,8 @@ In `~/.claude/slack.conf`:
 
 ## Stopping
 
-Use `--stop` to kill the daemon, or note the background task ID for `TaskStop`.
+Use `--stop` to kill the daemon, or use `scc-slack:stop`.
 
 ## Falling back to cron mode
 
-If daemon mode has issues, unset `SLACK_POLL_DAEMON` (or set to `0`) and use the standard `scc-slack:loop` skill with `/loop 1m`.
+If daemon mode has issues, unset `SLACK_POLL_DAEMON` (or set to `0`) in `~/.claude/slack.conf`. The `/loop 1m` cron will automatically fall back to using the `scc-slack:read` skill instead.
