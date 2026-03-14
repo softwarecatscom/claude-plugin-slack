@@ -20,6 +20,8 @@ SCRIPTS_DIR=$(find ~/.claude/plugins/cache -path "*/scc-slack/*/scripts/slack-id
 
 **ALWAYS use the `scripts/slack-*` helpers for Slack operations.** Do NOT call the Slack API directly with curl. The scripts handle token loading, channel resolution, mention encoding (`@here` → `<!here>`, `@Name` → `<@USERID>`), and JSON payload construction correctly. Calling the API directly bypasses this and introduces bugs (e.g., Claude Code's Bash tool escapes `!` in `<!here>`, breaking broadcast mentions). If a script doesn't exist for what you need, add one — don't inline curl calls.
 
+**Prefer `ctx_execute` over Bash** when running scripts that produce output (polls, identity, resolve, mention tracker). This keeps raw output in the sandbox and protects your context window. Only use Bash for the `SCRIPTS_DIR` setup above, `eval` commands that set shell variables, and side-effect commands with minimal output (`slack-send`, `slack-react`).
+
 ## Steps
 
 ### Step 1: Load config (once per session)
@@ -42,8 +44,9 @@ This sets `USER_ID`, `USERNAME`, `DISPLAY_NAME`, and `REAL_NAME`. Keep these for
 
 **ALWAYS use `slack-poll`** — it handles channel resolution, cursor-based fetching, mention filtering, AND thread scanning in one call.
 
+Run via `ctx_execute` to keep the JSON output out of your context window:
 ```bash
-POLL_OUTPUT=$("${SCRIPTS_DIR}/slack-poll")
+"${SCRIPTS_DIR}/slack-poll"
 ```
 
 The output contains `# channel=NAME id=ID` headers followed by JSON arrays of filtered messages, plus `# thread=TS channel=ID` sections for threads you participate in. Parse each JSON array block for actionable messages.
@@ -58,10 +61,10 @@ Each message entry has `ts`, `user`, `text`, `match_type`, `bot_id`, and `thread
 
 ### Step 3b: Check for unresponsive @mentions
 
-After polling, tick the mention tracker to check if any @mentioned agents haven't responded:
+After polling, tick the mention tracker to check if any @mentioned agents haven't responded. Run via `ctx_execute`:
 
 ```bash
-EXPIRED=$("${SCRIPTS_DIR}/slack-mention-tracker" tick)
+"${SCRIPTS_DIR}/slack-mention-tracker" tick
 ```
 
 If `EXPIRED` is not `[]`, it contains entries for agents who haven't responded after 5 poll cycles (~5 minutes). For **each** expired entry, post a thread reference in the main channel so the request gains visibility:
@@ -80,7 +83,7 @@ This only fires once per tracked mention — the tracker marks it as alerted aft
 
 For **each** message on the action list, in chronological order:
 
-**a) Resolve display names.** Resolve the sender and any mentioned users:
+**a) Resolve display names.** Resolve the sender and any mentioned users (via `ctx_execute`):
 ```bash
 "${SCRIPTS_DIR}/slack-resolve" SENDER_USER_ID OTHER_USER_IDS...
 ```

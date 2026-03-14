@@ -16,11 +16,13 @@ SCRIPTS_DIR=$(find ~/.claude/plugins/cache -path "*/scc-slack/*/scripts/slack-id
 
 **ALWAYS use `slack-channels` to list channels.** Do NOT call `conversations.list` directly with curl.
 
+**Prefer `ctx_execute` over Bash** when running scripts that produce output. This keeps raw output in the sandbox and protects your context window.
+
 ## Steps
 
 1. Use the `scc-slack:config` skill to load plugin config.
 
-2. List channels using the script:
+2. List channels using the script (via `ctx_execute`):
    ```bash
    "${SCRIPTS_DIR}/slack-channels"
    ```

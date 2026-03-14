@@ -18,9 +18,11 @@ Locate the plugin scripts once per session:
 SCRIPTS_DIR=$(find ~/.claude/plugins/cache -path "*/scc-slack/*/scripts/slack-identity" 2>/dev/null | sort -V | tail -1 | xargs dirname)
 ```
 
+**Prefer `ctx_execute` over Bash** when running these scripts. This keeps output in the sandbox and protects your context window.
+
 ## Steps
 
-1. **If the query is a channel** (`#` prefix or channel context):
+1. **If the query is a channel** (`#` prefix or channel context), run via `ctx_execute`:
    ```bash
    "${SCRIPTS_DIR}/slack-resolve" --channel "<channel_name>"
    ```

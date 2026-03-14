@@ -21,9 +21,11 @@ SCRIPTS_DIR=$(find ~/.claude/plugins/cache -path "*/scc-slack/*/scripts/slack-id
 
 ## Steps
 
+**Prefer `ctx_execute` over Bash** when running commands that produce output. This keeps raw output in the sandbox and protects your context window.
+
 ### Step 1: Determine version and changelog
 
-Get the latest tag and the commits since the previous tag:
+Get the latest tag and the commits since the previous tag (via `ctx_execute`):
 
 ```bash
 # Latest tag (or use provided version)
