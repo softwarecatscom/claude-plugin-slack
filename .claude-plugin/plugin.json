@@ -1,6 +1,6 @@
 {
   "name": "scc-slack",
-  "version": "0.26.2",
+  "version": "0.27.0",
   "description": "Slack messaging plugin for Claude Code agents via rockymadden/slack-cli",
   "author": {
     "name": "SoftwareCats",
