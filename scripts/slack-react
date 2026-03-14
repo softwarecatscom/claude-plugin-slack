@@ -57,7 +57,7 @@ if [ "${MODE}" = "check" ]; then
     exit 1
   fi
 else
-  RESPONSE=$(curl -s -X POST ${SLACK_API_BASE}/api/reactions.add \
+  RESPONSE=$(curl -s -X POST "${SLACK_API_BASE}/api/reactions.add" \
     -H "Authorization: Bearer ${SLACK_TOKEN}" \
     -H "Content-type: application/json" \
     -d "$(jq -n --arg channel "${CHANNEL_ID}" --arg timestamp "${TIMESTAMP}" --arg name "${EMOJI}" \
