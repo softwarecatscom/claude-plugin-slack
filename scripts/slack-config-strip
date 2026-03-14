@@ -1,0 +1,33 @@
+#!/usr/bin/env bash
+# Remove a key from ~/.claude/slack.conf.
+#
+# Usage: slack-config-strip KEY
+#   KEY  The config key to remove (e.g., SLACK_TOKEN)
+#
+# Removes all lines matching ^KEY= from the config file.
+# No-op if the key is not present or the file doesn't exist.
+
+set -euo pipefail
+
+CONF="${HOME}/.claude/slack.conf"
+
+if [ $# -ne 1 ]; then
+  echo "Usage: slack-config-strip KEY" >&2
+  exit 1
+fi
+
+KEY="$1"
+
+if [ ! -f "${CONF}" ]; then
+  echo "No config file at ${CONF}"
+  exit 0
+fi
+
+if ! grep -q "^${KEY}=" "${CONF}" 2>/dev/null; then
+  echo "Key '${KEY}' not found in ${CONF}"
+  exit 0
+fi
+
+grep -v "^${KEY}=" "${CONF}" > "${CONF}.tmp"
+mv "${CONF}.tmp" "${CONF}"
+echo "Removed '${KEY}' from ${CONF}"

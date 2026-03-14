@@ -22,11 +22,8 @@ This pulls the latest version from the scc-marketplace registry.
 Remove stale cached data that may cause issues with the new version:
 
 ```bash
-# Clear the user resolve cache (display names may have changed, entries may be corrupted)
-rm -f ~/.claude/slack-cache/users
-
-# Clear the channel resolve cache
-rm -f ~/.claude/slack-cache/channels
+SCRIPTS_DIR=$(find ~/.claude/plugins/cache -path "*/scc-slack/*/scripts/slack-identity" 2>/dev/null | sort -V | tail -1 | xargs dirname)
+"${SCRIPTS_DIR}/slack-cache-clear"
 ```
 
 The caches will be rebuilt automatically on next use.

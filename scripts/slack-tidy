@@ -1,0 +1,79 @@
+#!/usr/bin/env bash
+# Mark tracked channels as read in Slack and reset cursor state.
+#
+# Usage: slack-tidy [--dry-run]
+#   --dry-run  Show what would be tidied without making changes
+#
+# Reads channel cursors from ~/.claude/slack-cursors.conf (format: CHANNEL_ID=TIMESTAMP),
+# marks each channel as read at the stored timestamp, then resets the cursor file.
+
+set -euo pipefail
+
+# Proxy support
+SLACK_API_BASE="${SLACK_PROXY_URL:-https://slack.com}"
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+# shellcheck disable=SC1091
+source "${SCRIPT_DIR}/slack-common"
+
+CURSOR_FILE="${HOME}/.claude/slack-cursors.conf"
+DRY_RUN=false
+
+for arg in "$@"; do
+  case "${arg}" in
+    --dry-run) DRY_RUN=true ;;
+    *) echo "Unknown option: ${arg}" >&2; exit 1 ;;
+  esac
+done
+
+# Load token
+SLACK_TOKEN=$(cat "$(dirname "$(command -v slack)")/.slack" 2>/dev/null)
+if [ -z "${SLACK_TOKEN}" ]; then
+  echo "ERROR: No Slack token found. Run /scc-slack:setup first." >&2
+  exit 1
+fi
+
+# Show current state
+if [ ! -f "${CURSOR_FILE}" ] || [ ! -s "${CURSOR_FILE}" ]; then
+  echo "No tracked channels (cursor file empty or missing)."
+  exit 0
+fi
+
+echo "Tracked channels:"
+cat "${CURSOR_FILE}"
+echo ""
+
+count=0
+while IFS='=' read -r CHANNEL_ID TIMESTAMP; do
+  [ -z "${CHANNEL_ID}" ] && continue
+
+  # Resolve channel name
+  local_name=$("${SCRIPT_DIR}/slack-resolve" --channel-id "${CHANNEL_ID}" 2>/dev/null | cut -d= -f2- || echo "${CHANNEL_ID}")
+
+  if [ "${DRY_RUN}" = "true" ]; then
+    echo "[dry-run] Would mark #${local_name} (${CHANNEL_ID}) as read at ${TIMESTAMP}"
+  else
+    result=$(slack_curl -s -X POST \
+      -H "Authorization: Bearer ${SLACK_TOKEN}" \
+      -H "Content-type: application/json" \
+      -d "{\"channel\":\"${CHANNEL_ID}\",\"ts\":\"${TIMESTAMP}\"}" \
+      "${SLACK_API_BASE}/api/conversations.mark")
+    ok=$(echo "${result}" | jq -r '.ok')
+    if [ "${ok}" = "true" ]; then
+      echo "Marked #${local_name} as read"
+    else
+      err=$(echo "${result}" | jq -r '.error // "unknown"')
+      echo "Failed to mark #${local_name}: ${err}" >&2
+    fi
+  fi
+  count=$((count + 1))
+done < "${CURSOR_FILE}"
+
+# Reset cursor file
+if [ "${DRY_RUN}" = "false" ]; then
+  > "${CURSOR_FILE}"
+  echo ""
+  echo "Tidied ${count} channel(s). Cursor file reset."
+else
+  echo ""
+  echo "[dry-run] Would tidy ${count} channel(s)."
+fi
