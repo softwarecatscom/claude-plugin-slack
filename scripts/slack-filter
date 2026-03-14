@@ -3,7 +3,7 @@
 # Reads raw conversations.history or conversations.replies JSON from stdin,
 # outputs only actionable messages.
 #
-# Usage: slack-fetch CHANNEL_ID | slack-filter [--thread-participant]
+# Usage: echo "$JSON" | slack-filter [--thread-participant]
 #
 # Loads identity from ~/.claude/slack-cache/identity (run slack-identity first).
 # A message is actionable if it:
@@ -43,9 +43,9 @@ source "${IDENTITY_FILE}"
 # Read JSON from stdin
 INPUT=$(cat)
 
-# Detect empty input (broken pipeline — slack-fetch likely failed)
+# Detect empty input (broken pipeline — caller likely failed)
 if [ -z "${INPUT}" ]; then
-  echo "ERROR: No input received from slack-fetch. Check that slack-fetch is called with a valid channel ID." >&2
+  echo "ERROR: No input received. Check that the caller provides valid JSON on stdin." >&2
   echo '[]'
   exit 0
 fi

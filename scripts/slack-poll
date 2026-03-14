@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Poll configured Slack channels for new messages mentioning this bot.
 # Reads AUTONOMOUS_CHANNELS from ~/.claude/slack.conf, resolves channel names
-# to IDs, then runs slack-fetch | slack-filter for each.
+# to IDs, fetches history, filters for mentions, and scans threads.
 #
 # Usage: slack-poll
 #
@@ -26,9 +26,20 @@ fi
 # shellcheck disable=SC1090
 source "${CONFIG_FILE}"
 
+# Proxy support: use proxy if configured, fall back to direct Slack
+SLACK_API_BASE="${SLACK_PROXY_URL:-https://slack.com}"
+
 if [ -z "${AUTONOMOUS_CHANNELS:-}" ]; then
   echo "ERROR: AUTONOMOUS_CHANNELS not set in ${CONFIG_FILE}." >&2
   echo '{"ok":false,"error":"no_channels","hint":"Set AUTONOMOUS_CHANNELS in ~/.claude/slack.conf"}'
+  exit 1
+fi
+
+# Load token
+SLACK_TOKEN=$(cat "$(dirname "$(which slack)")/.slack" 2>/dev/null)
+if [ -z "${SLACK_TOKEN}" ]; then
+  echo "ERROR: No Slack token found. Run /scc-slack:setup first." >&2
+  echo '{"ok":false,"error":"no_token","hint":"Run /scc-slack:setup first"}'
   exit 1
 fi
 
@@ -63,9 +74,14 @@ for CHANNEL_NAME in "${CHANNELS[@]}"; do
   CURSOR_FILE="${HOME}/.claude/slack-cursors.conf"
   OLD_CURSOR=$(grep "^${CHANNEL_ID}=" "${CURSOR_FILE}" 2>/dev/null | cut -d= -f2 || true)
 
-  # Fetch channel history WITHOUT auto-advancing cursor
-  # We advance manually after thread scanning to avoid the race condition
-  HISTORY=$("${SCRIPT_DIR}/slack-fetch" "${CHANNEL_ID}" --no-advance 2>&1) || true
+  # Fetch channel history (cursor advances manually after thread scanning)
+  if [ -n "${OLD_CURSOR}" ]; then
+    HISTORY=$(curl -s -H "Authorization: Bearer ${SLACK_TOKEN}" \
+      "${SLACK_API_BASE}/api/conversations.history?channel=${CHANNEL_ID}&oldest=${OLD_CURSOR}&limit=20") || true
+  else
+    HISTORY=$(curl -s -H "Authorization: Bearer ${SLACK_TOKEN}" \
+      "${SLACK_API_BASE}/api/conversations.history?channel=${CHANNEL_ID}&limit=10") || true
+  fi
 
   # Filter for mentions in channel-level messages
   echo "${HISTORY}" | "${SCRIPT_DIR}/slack-filter" || echo '[]'
@@ -79,9 +95,8 @@ for CHANNEL_NAME in "${CHANNELS[@]}"; do
     # Fetch recent history (last 50 messages) WITHOUT cursor for thread scanning.
     # The cursor-filtered HISTORY only has new messages — parents posted in earlier
     # polls won't be there. This wider fetch catches older parents with new replies.
-    SLACK_TOKEN=$(cat "$(dirname "$(which slack)")/.slack" 2>/dev/null) || true
     THREAD_HISTORY=$(curl -s -H "Authorization: Bearer ${SLACK_TOKEN}" \
-      "https://slack.com/api/conversations.history?channel=${CHANNEL_ID}&limit=50")
+      "${SLACK_API_BASE}/api/conversations.history?channel=${CHANNEL_ID}&limit=50")
 
     # Use thread cursor (separate from channel cursor) for latest_reply comparison
     THREAD_CURSOR_FILE="${HOME}/.claude/slack-thread-cursors.conf"
@@ -106,7 +121,7 @@ for CHANNEL_NAME in "${CHANNELS[@]}"; do
 
       echo "# thread=${PARENT_TS} channel=${CHANNEL_ID}"
       REPLIES=$(curl -s -H "Authorization: Bearer ${SLACK_TOKEN}" \
-        "https://slack.com/api/conversations.replies?channel=${CHANNEL_ID}&ts=${PARENT_TS}&oldest=${EFFECTIVE_THREAD_CURSOR:-0}")
+        "${SLACK_API_BASE}/api/conversations.replies?channel=${CHANNEL_ID}&ts=${PARENT_TS}&oldest=${EFFECTIVE_THREAD_CURSOR:-0}")
 
       # Strip thread_broadcast replies (already in channel output) then filter
       echo "${REPLIES}" | jq '{ok: .ok, messages: [.messages[] | select(.subtype != "thread_broadcast")]}' 2>/dev/null \
@@ -130,7 +145,7 @@ for CHANNEL_NAME in "${CHANNELS[@]}"; do
       [ -z "${PARENT_TS}" ] && continue
 
       REPLIES=$(curl -s -H "Authorization: Bearer ${SLACK_TOKEN}" \
-        "https://slack.com/api/conversations.replies?channel=${CHANNEL_ID}&ts=${PARENT_TS}&oldest=${EFFECTIVE_THREAD_CURSOR:-0}")
+        "${SLACK_API_BASE}/api/conversations.replies?channel=${CHANNEL_ID}&ts=${PARENT_TS}&oldest=${EFFECTIVE_THREAD_CURSOR:-0}")
 
       # Check if any reply mentions us — only output if there are matches
       MENTION_MATCHES=$(echo "${REPLIES}" | jq --arg uid "${USER_ID}" '
@@ -171,3 +186,6 @@ for CHANNEL_NAME in "${CHANNELS[@]}"; do
     mv "${TMPFILE}" "${THREAD_CURSOR_FILE}"
   fi
 done
+
+# Heartbeat: update agent status after polling
+"${SCRIPT_DIR}/slack-heartbeat" 2>/dev/null || true

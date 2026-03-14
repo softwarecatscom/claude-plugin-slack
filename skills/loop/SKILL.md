@@ -35,7 +35,9 @@ SCRIPTS_DIR=$(find ~/.claude/plugins/cache -path "*/scc-slack/*/scripts/slack-id
 "${SCRIPTS_DIR}/slack-poll"
 ```
 
-**IMPORTANT:** Always use `slack-poll` — never `slack-fetch` directly. `slack-poll` handles channel resolution, cursor management, mention filtering, AND thread scanning. Using `slack-fetch` directly skips thread scanning, causing missed thread replies.
+**IMPORTANT:** Always use `slack-poll` — it handles channel resolution, cursor management, mention filtering, AND thread scanning in one call. It also runs the heartbeat automatically at the end of each cycle.
+
+**DO NOT create a separate cron job for `/heartbeat`.** Heartbeat is built into `slack-poll` — if you are polling, you are heartbeating. A single polling cron is all you need.
 
 ## Stopping
 

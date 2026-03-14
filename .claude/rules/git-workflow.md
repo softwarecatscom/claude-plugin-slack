@@ -1,0 +1,1 @@
+../../../agent-rules-repo/.claude/rules/git-workflow.md

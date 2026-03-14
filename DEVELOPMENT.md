@@ -5,7 +5,7 @@ Conventions for developing and maintaining the scc-slack plugin.
 ## Scripts
 
 ### Naming
-- All scripts follow the `slack-<action>` pattern (e.g. `slack-send`, `slack-fetch`, `slack-poll`, `slack-heartbeat`)
+- All scripts follow the `slack-<action>` pattern (e.g. `slack-send`, `slack-poll`, `slack-heartbeat`)
 - Scripts are executable and live in `scripts/`
 
 ### Flag Parsing
@@ -74,12 +74,12 @@ Conventions for developing and maintaining the scc-slack plugin.
 - Git tag must match: `v<version>`
 - Update command: `/scc-slack:update` (never manual `claude plugin update`)
 - Announcements end with: "Update with: /scc-slack:update"
-- Reload cycle: stop cron -> update plugin -> verify scripts on disk -> test fetch -> restart cron -> update MEMORY.md -> announce
+- Reload cycle: stop cron -> update plugin -> verify scripts on disk -> test poll -> restart cron -> update MEMORY.md -> announce
 
 ### Update Verification (AGT-22)
 1. Verify scripts exist on disk at new version path
-2. Test fetch with new version (`slack-fetch CHANNEL_ID --limit 1`)
-3. Confirm `ok:true` response
+2. Test poll with new version (`slack-poll` — verify output contains channel headers)
+3. Confirm no errors in output
 4. Only then report update as complete
 
 ## Linear Integration

@@ -40,7 +40,7 @@ This sets `USER_ID`, `USERNAME`, `DISPLAY_NAME`, and `REAL_NAME`. Keep these for
 
 ### Step 3: Poll for actionable messages
 
-**ALWAYS use `slack-poll`** — never call `slack-fetch` or `slack-filter` directly. `slack-poll` handles channel resolution, cursor-based fetching, mention filtering, AND thread scanning in one call. Calling `slack-fetch` directly skips thread scanning, which means you miss thread replies entirely.
+**ALWAYS use `slack-poll`** — it handles channel resolution, cursor-based fetching, mention filtering, AND thread scanning in one call.
 
 ```bash
 POLL_OUTPUT=$("${SCRIPTS_DIR}/slack-poll")
@@ -161,6 +161,8 @@ Do **not** advance to the next message until all detected commitments are resolv
 ### Done
 
 The cursor is auto-advanced by `slack-poll` (step 3) — you do NOT need to update it manually. `slack-poll` writes the newest fetched message timestamp to the cursor immediately after a successful API call. This prevents the race condition where agents accidentally advance the cursor to their reply's timestamp, skipping messages that arrived between fetch and reply.
+
+**Heartbeat is handled automatically** — `slack-poll` runs `slack-heartbeat` at the end of each cycle. Do NOT create a separate cron job for `/heartbeat`.
 
 ## When to escalate
 

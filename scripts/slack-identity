@@ -7,6 +7,9 @@
 
 set -euo pipefail
 
+# Proxy support: use proxy if configured, fall back to direct Slack
+SLACK_API_BASE="${SLACK_PROXY_URL:-https://slack.com}"
+
 CACHE_DIR="${HOME}/.claude/slack-cache"
 CACHE_FILE="${CACHE_DIR}/identity"
 
@@ -24,7 +27,7 @@ if [ -z "${SLACK_TOKEN}" ]; then
 fi
 
 # auth.test to get user_id and username
-AUTH=$(curl -s -H "Authorization: Bearer ${SLACK_TOKEN}" https://slack.com/api/auth.test)
+AUTH=$(curl -s -H "Authorization: Bearer ${SLACK_TOKEN}" ${SLACK_API_BASE}/api/auth.test)
 if [ "$(echo "${AUTH}" | jq -r '.ok')" != "true" ]; then
   echo "ERROR: auth.test failed: $(echo "${AUTH}" | jq -r '.error')" >&2
   exit 1
@@ -34,7 +37,7 @@ USER_ID=$(echo "${AUTH}" | jq -r '.user_id')
 USERNAME=$(echo "${AUTH}" | jq -r '.user')
 
 # users.info to get display_name and real_name
-INFO=$(curl -s -H "Authorization: Bearer ${SLACK_TOKEN}" "https://slack.com/api/users.info?user=${USER_ID}")
+INFO=$(curl -s -H "Authorization: Bearer ${SLACK_TOKEN}" "${SLACK_API_BASE}/api/users.info?user=${USER_ID}")
 DISPLAY_NAME=$(echo "${INFO}" | jq -r '.user.profile.display_name // ""')
 REAL_NAME=$(echo "${INFO}" | jq -r '.user.profile.real_name // ""')
 

@@ -10,6 +10,9 @@
 
 set -euo pipefail
 
+# Proxy support: use proxy if configured, fall back to direct Slack
+SLACK_API_BASE="${SLACK_PROXY_URL:-https://slack.com}"
+
 MODE="list"
 FILTER=""
 CHANNEL_ID=""
@@ -31,7 +34,7 @@ fi
 
 if [ "${MODE}" = "id" ]; then
   RESPONSE=$(curl -s -H "Authorization: Bearer ${SLACK_TOKEN}" \
-    "https://slack.com/api/conversations.info?channel=${CHANNEL_ID}")
+    "${SLACK_API_BASE}/api/conversations.info?channel=${CHANNEL_ID}")
   if [ "$(echo "${RESPONSE}" | jq -r '.ok')" = "true" ]; then
     echo "${RESPONSE}" | jq -r '.channel | "\(.id)\t\(.name)\t\(.num_members)\t\(.purpose.value // "")"'
   else
@@ -46,14 +49,14 @@ CURSOR=""
 ALL_CHANNELS="[]"
 
 while true; do
-  URL="https://slack.com/api/conversations.list?types=public_channel,private_channel&limit=200"
+  URL="${SLACK_API_BASE}/api/conversations.list?types=public_channel,private_channel&limit=200"
   [ -n "${CURSOR}" ] && URL="${URL}&cursor=${CURSOR}"
 
   RESPONSE=$(curl -s -H "Authorization: Bearer ${SLACK_TOKEN}" "${URL}")
 
   # Fall back to public-only if missing_scope
   if echo "${RESPONSE}" | jq -e '.ok == false and .error == "missing_scope"' >/dev/null 2>&1; then
-    URL="https://slack.com/api/conversations.list?types=public_channel&limit=200"
+    URL="${SLACK_API_BASE}/api/conversations.list?types=public_channel&limit=200"
     [ -n "${CURSOR}" ] && URL="${URL}&cursor=${CURSOR}"
     RESPONSE=$(curl -s -H "Authorization: Bearer ${SLACK_TOKEN}" "${URL}")
   fi
