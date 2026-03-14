@@ -1,0 +1,1 @@
+../../../agent-rules-repo/.claude/agents/e2e-test-agent.md

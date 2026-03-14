@@ -1,0 +1,1 @@
+../../../agent-rules-repo/.claude/commands/speckit.specify.md

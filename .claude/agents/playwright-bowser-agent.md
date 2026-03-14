@@ -1,0 +1,1 @@
+../../../agent-rules-repo/.claude/agents/playwright-bowser-agent.md

@@ -1,0 +1,1 @@
+../../../agent-rules-repo/.claude/agents/gha-monitor.md
