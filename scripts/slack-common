@@ -1,0 +1,66 @@
+#!/usr/bin/env bash
+# Shared functions for scc-slack scripts.
+# Source this file after setting SLACK_API_BASE.
+#
+# Provides:
+#   slack_curl — drop-in curl wrapper with proxy fallback retry.
+
+# slack_curl: runs curl, retries against direct Slack on proxy failure.
+#
+# On curl exit 6 (DNS), 7 (connection refused), or 28 (timeout):
+#   - If SLACK_API_BASE points to a proxy (not https://slack.com),
+#     retries the same call with https://slack.com replacing the proxy URL.
+#   - Emits a one-time stderr warning (10-minute cooldown).
+#
+# Usage: identical to curl. Replace `curl` with `slack_curl` in scripts.
+slack_curl() {
+  local _sc_output _sc_exit
+  _sc_output=$(command curl "$@" 2>/dev/null)
+  _sc_exit=$?
+
+  if [ $_sc_exit -eq 0 ]; then
+    printf '%s' "$_sc_output"
+    return 0
+  fi
+
+  # Not using proxy — nothing to fall back to
+  if [ "${SLACK_API_BASE}" = "https://slack.com" ]; then
+    printf '%s' "$_sc_output"
+    return $_sc_exit
+  fi
+
+  # Retry on connection errors: 6=DNS, 7=refused, 28=timeout
+  case $_sc_exit in
+    6|7|28)
+      _slack_fallback_warn $_sc_exit
+      # Replace proxy URL with direct Slack in all args
+      local _sc_new_args=()
+      for _sc_arg in "$@"; do
+        _sc_new_args+=("${_sc_arg/${SLACK_API_BASE}/https://slack.com}")
+      done
+      command curl "${_sc_new_args[@]}"
+      return $?
+      ;;
+    *)
+      printf '%s' "$_sc_output"
+      return $_sc_exit
+      ;;
+  esac
+}
+
+# _slack_fallback_warn: emit a one-time warning on proxy fallback (10-min cooldown).
+_slack_fallback_warn() {
+  local _exit_code="${1:-0}"
+  local _state_file="${HOME}/.claude/slack-proxy-fallback-alerted"
+  local _now
+  _now=$(date +%s)
+  local _last_alert=0
+  if [ -f "$_state_file" ]; then
+    _last_alert=$(cat "$_state_file" 2>/dev/null || echo 0)
+  fi
+  if [ $((_now - _last_alert)) -ge 600 ]; then
+    echo "WARN: Proxy ${SLACK_API_BASE} unreachable (curl exit ${_exit_code}), falling back to direct Slack" >&2
+    mkdir -p "$(dirname "$_state_file")"
+    echo "$_now" > "$_state_file"
+  fi
+}

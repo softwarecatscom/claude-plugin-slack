@@ -12,6 +12,9 @@ set -euo pipefail
 
 # Proxy support: use proxy if configured, fall back to direct Slack
 SLACK_API_BASE="${SLACK_PROXY_URL:-https://slack.com}"
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+# shellcheck disable=SC1091
+source "${SCRIPT_DIR}/slack-common"
 
 MODE="list"
 FILTER=""
@@ -33,7 +36,7 @@ if [ -z "${SLACK_TOKEN}" ]; then
 fi
 
 if [ "${MODE}" = "id" ]; then
-  RESPONSE=$(curl -s -H "Authorization: Bearer ${SLACK_TOKEN}" \
+  RESPONSE=$(slack_curl -s -H "Authorization: Bearer ${SLACK_TOKEN}" \
     "${SLACK_API_BASE}/api/conversations.info?channel=${CHANNEL_ID}")
   if [ "$(echo "${RESPONSE}" | jq -r '.ok')" = "true" ]; then
     echo "${RESPONSE}" | jq -r '.channel | "\(.id)\t\(.name)\t\(.num_members)\t\(.purpose.value // "")"'
@@ -52,13 +55,13 @@ while true; do
   URL="${SLACK_API_BASE}/api/conversations.list?types=public_channel,private_channel&limit=200"
   [ -n "${CURSOR}" ] && URL="${URL}&cursor=${CURSOR}"
 
-  RESPONSE=$(curl -s -H "Authorization: Bearer ${SLACK_TOKEN}" "${URL}")
+  RESPONSE=$(slack_curl -s -H "Authorization: Bearer ${SLACK_TOKEN}" "${URL}")
 
   # Fall back to public-only if missing_scope
   if echo "${RESPONSE}" | jq -e '.ok == false and .error == "missing_scope"' >/dev/null 2>&1; then
     URL="${SLACK_API_BASE}/api/conversations.list?types=public_channel&limit=200"
     [ -n "${CURSOR}" ] && URL="${URL}&cursor=${CURSOR}"
-    RESPONSE=$(curl -s -H "Authorization: Bearer ${SLACK_TOKEN}" "${URL}")
+    RESPONSE=$(slack_curl -s -H "Authorization: Bearer ${SLACK_TOKEN}" "${URL}")
   fi
 
   if [ "$(echo "${RESPONSE}" | jq -r '.ok')" != "true" ]; then
