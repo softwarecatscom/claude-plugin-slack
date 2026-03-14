@@ -11,6 +11,9 @@
 
 set -euo pipefail
 
+# Proxy support: use proxy if configured, fall back to direct Slack
+SLACK_API_BASE="${SLACK_PROXY_URL:-https://slack.com}"
+
 MODE="add"
 if [ "${1:-}" = "--check" ]; then
   MODE="check"
@@ -38,7 +41,7 @@ if [ -z "${SLACK_TOKEN}" ]; then
 fi
 
 if [ "${MODE}" = "check" ]; then
-  RESPONSE=$(curl -s "https://slack.com/api/reactions.get?channel=${CHANNEL_ID}&timestamp=${TIMESTAMP}" \
+  RESPONSE=$(curl -s "${SLACK_API_BASE}/api/reactions.get?channel=${CHANNEL_ID}&timestamp=${TIMESTAMP}" \
     -H "Authorization: Bearer ${SLACK_TOKEN}")
   if [ "$(echo "${RESPONSE}" | jq -r '.ok')" = "true" ]; then
     if echo "${RESPONSE}" | jq -e --arg emoji "${EMOJI}" \
@@ -54,7 +57,7 @@ if [ "${MODE}" = "check" ]; then
     exit 1
   fi
 else
-  RESPONSE=$(curl -s -X POST https://slack.com/api/reactions.add \
+  RESPONSE=$(curl -s -X POST ${SLACK_API_BASE}/api/reactions.add \
     -H "Authorization: Bearer ${SLACK_TOKEN}" \
     -H "Content-type: application/json" \
     -d "$(jq -n --arg channel "${CHANNEL_ID}" --arg timestamp "${TIMESTAMP}" --arg name "${EMOJI}" \

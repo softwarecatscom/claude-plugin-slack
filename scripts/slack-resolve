@@ -13,6 +13,9 @@
 
 set -euo pipefail
 
+# Proxy support: use proxy if configured, fall back to direct Slack
+SLACK_API_BASE="${SLACK_PROXY_URL:-https://slack.com}"
+
 CACHE_DIR="${HOME}/.claude/slack-cache"
 USER_CACHE="${CACHE_DIR}/users"
 CHANNEL_CACHE="${CACHE_DIR}/channels"
@@ -45,7 +48,7 @@ resolve_user_id() {
   fi
   # API call
   local info
-  info=$(curl -s -H "Authorization: Bearer ${SLACK_TOKEN}" "https://slack.com/api/users.info?user=${uid}")
+  info=$(curl -s -H "Authorization: Bearer ${SLACK_TOKEN}" "${SLACK_API_BASE}/api/users.info?user=${uid}")
   if [ "$(echo "${info}" | jq -r '.ok')" = "true" ]; then
     local dname
     dname=$(echo "${info}" | jq -r '.user.profile.display_name // ""')
@@ -71,7 +74,7 @@ resolve_name_to_id() {
   fi
   # Need to fetch user list and search
   local users
-  users=$(curl -s -H "Authorization: Bearer ${SLACK_TOKEN}" "https://slack.com/api/users.list?limit=200")
+  users=$(curl -s -H "Authorization: Bearer ${SLACK_TOKEN}" "${SLACK_API_BASE}/api/users.list?limit=200")
   if [ "$(echo "${users}" | jq -r '.ok')" = "true" ]; then
     # Bulk-write user cache (avoid pipe subshell)
     echo "${users}" | jq -r '.members[] | "\(.id)=\(if (.profile.display_name // "") != "" then .profile.display_name else (.profile.real_name // .name // "") end)"' >> "${USER_CACHE}.tmp"
@@ -101,7 +104,7 @@ resolve_channel_name() {
   fi
   # API call
   local channels
-  channels=$(curl -s -H "Authorization: Bearer ${SLACK_TOKEN}" "https://slack.com/api/conversations.list?types=public_channel,private_channel&limit=200")
+  channels=$(curl -s -H "Authorization: Bearer ${SLACK_TOKEN}" "${SLACK_API_BASE}/api/conversations.list?types=public_channel,private_channel&limit=200")
   if [ "$(echo "${channels}" | jq -r '.ok')" = "true" ]; then
     # Bulk-write channel cache (avoid pipe subshell)
     echo "${channels}" | jq -r '.channels[] | "\(.id)=\(.name)"' >> "${CHANNEL_CACHE}.tmp"
@@ -127,7 +130,7 @@ resolve_channel_id() {
   fi
   # API call
   local info
-  info=$(curl -s -H "Authorization: Bearer ${SLACK_TOKEN}" "https://slack.com/api/conversations.info?channel=${cid}")
+  info=$(curl -s -H "Authorization: Bearer ${SLACK_TOKEN}" "${SLACK_API_BASE}/api/conversations.info?channel=${cid}")
   if [ "$(echo "${info}" | jq -r '.ok')" = "true" ]; then
     local cname
     cname=$(echo "${info}" | jq -r '.channel.name')
