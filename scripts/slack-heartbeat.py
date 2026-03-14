@@ -2,15 +2,19 @@
 """Update this agent's heartbeat in the pinned Agent Status Check thread,
 then check all peers for staleness (2+ digits behind) and outdated versions.
 
-Usage: slack-heartbeat [CHANNEL_ID]
-  CHANNEL_ID — channel containing the pinned status thread (default: from slack.conf)
+Usage: slack-heartbeat [--maintenance [DURATION]] [CHANNEL_ID]
+  CHANNEL_ID  — channel containing the pinned status thread (default: from slack.conf)
+  --maintenance [DURATION] — signal maintenance mode in heartbeat status.
+      Appends '| Maintenance <ISO time> [for DURATION]' to the status line.
+      DURATION is optional: e.g. 2h, 30m, 1d, 90s.
+      Peers in maintenance are skipped by the watchdog staleness check.
 
 Config: ~/.claude/slack-heartbeat.conf (auto-created on first run)
   HEARTBEAT_THREAD_TS — ts of the pinned "Agent Status Check" parent message
   HEARTBEAT_MSG_TS    — ts of this agent's reply in that thread
 
 The heartbeat digit is calculated from the current minute: (minute // 6) + 1
-Format: :<digit_name>: v<scc-slack-version>
+Format: :<digit_name>: v<scc-slack-version> [| Maintenance <ISO> [for <duration>]]
 """
 
 import json
@@ -138,13 +142,26 @@ def detect_version() -> str:
     return match.group(1) if match else "unknown"
 
 
-def calculate_heartbeat() -> tuple[int, str, str]:
-    """Calculate heartbeat digit, emoji, and full text."""
+def calculate_heartbeat(maintenance: bool = False, duration: str | None = None) -> tuple[int, str, str]:
+    """Calculate heartbeat digit, emoji, and full text.
+    If maintenance is True, appends '| Maintenance <ISO> [for <duration>]'.
+    """
     minute = datetime.now().minute
     digit = (minute // 6) + 1
     emoji = f":{DIGIT_NAMES[digit]}:"
     version = detect_version()
-    return digit, emoji, f"{emoji} v{version}"
+    text = f"{emoji} v{version}"
+    if maintenance:
+        iso_time = datetime.now().strftime("%Y-%m-%dT%H:%M")
+        text += f" | Maintenance {iso_time}"
+        if duration:
+            text += f" for {duration}"
+    return digit, emoji, text
+
+
+def parse_maintenance(text: str) -> bool:
+    """Check if a heartbeat status line indicates maintenance mode."""
+    return "| Maintenance " in text
 
 
 def parse_digit(text: str) -> int | None:
@@ -201,12 +218,35 @@ def discover_own_message(token: str, channel_id: str, thread_ts: str, user_id: s
     return None
 
 
+def parse_args(argv: list[str]) -> tuple[str | None, bool, str | None]:
+    """Parse CLI arguments. Returns (channel_id, maintenance, duration)."""
+    maintenance = False
+    duration = None
+    channel_id = None
+    args = argv[1:]  # skip script name
+    i = 0
+    while i < len(args):
+        if args[i] == "--maintenance":
+            maintenance = True
+            # Next arg is duration if it looks like one (digits + unit suffix)
+            if i + 1 < len(args) and re.match(r"^\d+[smhd]$", args[i + 1]):
+                duration = args[i + 1]
+                i += 2
+            else:
+                i += 1
+        else:
+            channel_id = args[i]
+            i += 1
+    return channel_id, maintenance, duration
+
+
 def main():
     token = load_token()
     user_id = load_identity(token)
 
+    channel_id, maintenance, duration = parse_args(sys.argv)
+
     # Determine channel
-    channel_id = sys.argv[1] if len(sys.argv) > 1 else None
     if not channel_id:
         slack_conf = load_conf(SLACK_CONF)
         default = slack_conf.get("DEFAULT_CHANNEL", "")
@@ -215,7 +255,7 @@ def main():
     if not channel_id:
         sys.exit("ERROR: No channel specified and no DEFAULT_CHANNEL in slack.conf")
 
-    digit, emoji, heartbeat_text = calculate_heartbeat()
+    digit, emoji, heartbeat_text = calculate_heartbeat(maintenance, duration)
 
     # Load cached config
     conf = load_conf(CONFIG_FILE)
@@ -282,6 +322,10 @@ def main():
     for uid, msg in bot_msgs.items():
         peer_text = msg.get("text", "")
         display = resolve_user(uid)
+
+        # Skip peers in maintenance mode
+        if parse_maintenance(peer_text):
+            continue
 
         # Digit staleness check
         their_digit = parse_digit(peer_text)
