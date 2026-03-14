@@ -26,6 +26,9 @@ fi
 # shellcheck disable=SC1090
 source "${CONFIG_FILE}"
 
+# Proxy support: use proxy if configured, fall back to direct Slack
+SLACK_API_BASE="${SLACK_PROXY_URL:-https://slack.com}"
+
 if [ -z "${AUTONOMOUS_CHANNELS:-}" ]; then
   echo "ERROR: AUTONOMOUS_CHANNELS not set in ${CONFIG_FILE}." >&2
   echo '{"ok":false,"error":"no_channels","hint":"Set AUTONOMOUS_CHANNELS in ~/.claude/slack.conf"}'
@@ -74,10 +77,10 @@ for CHANNEL_NAME in "${CHANNELS[@]}"; do
   # Fetch channel history (cursor advances manually after thread scanning)
   if [ -n "${OLD_CURSOR}" ]; then
     HISTORY=$(curl -s -H "Authorization: Bearer ${SLACK_TOKEN}" \
-      "https://slack.com/api/conversations.history?channel=${CHANNEL_ID}&oldest=${OLD_CURSOR}&limit=20") || true
+      "${SLACK_API_BASE}/api/conversations.history?channel=${CHANNEL_ID}&oldest=${OLD_CURSOR}&limit=20") || true
   else
     HISTORY=$(curl -s -H "Authorization: Bearer ${SLACK_TOKEN}" \
-      "https://slack.com/api/conversations.history?channel=${CHANNEL_ID}&limit=10") || true
+      "${SLACK_API_BASE}/api/conversations.history?channel=${CHANNEL_ID}&limit=10") || true
   fi
 
   # Filter for mentions in channel-level messages
@@ -93,7 +96,7 @@ for CHANNEL_NAME in "${CHANNELS[@]}"; do
     # The cursor-filtered HISTORY only has new messages — parents posted in earlier
     # polls won't be there. This wider fetch catches older parents with new replies.
     THREAD_HISTORY=$(curl -s -H "Authorization: Bearer ${SLACK_TOKEN}" \
-      "https://slack.com/api/conversations.history?channel=${CHANNEL_ID}&limit=50")
+      "${SLACK_API_BASE}/api/conversations.history?channel=${CHANNEL_ID}&limit=50")
 
     # Use thread cursor (separate from channel cursor) for latest_reply comparison
     THREAD_CURSOR_FILE="${HOME}/.claude/slack-thread-cursors.conf"
@@ -118,7 +121,7 @@ for CHANNEL_NAME in "${CHANNELS[@]}"; do
 
       echo "# thread=${PARENT_TS} channel=${CHANNEL_ID}"
       REPLIES=$(curl -s -H "Authorization: Bearer ${SLACK_TOKEN}" \
-        "https://slack.com/api/conversations.replies?channel=${CHANNEL_ID}&ts=${PARENT_TS}&oldest=${EFFECTIVE_THREAD_CURSOR:-0}")
+        "${SLACK_API_BASE}/api/conversations.replies?channel=${CHANNEL_ID}&ts=${PARENT_TS}&oldest=${EFFECTIVE_THREAD_CURSOR:-0}")
 
       # Strip thread_broadcast replies (already in channel output) then filter
       echo "${REPLIES}" | jq '{ok: .ok, messages: [.messages[] | select(.subtype != "thread_broadcast")]}' 2>/dev/null \
@@ -142,7 +145,7 @@ for CHANNEL_NAME in "${CHANNELS[@]}"; do
       [ -z "${PARENT_TS}" ] && continue
 
       REPLIES=$(curl -s -H "Authorization: Bearer ${SLACK_TOKEN}" \
-        "https://slack.com/api/conversations.replies?channel=${CHANNEL_ID}&ts=${PARENT_TS}&oldest=${EFFECTIVE_THREAD_CURSOR:-0}")
+        "${SLACK_API_BASE}/api/conversations.replies?channel=${CHANNEL_ID}&ts=${PARENT_TS}&oldest=${EFFECTIVE_THREAD_CURSOR:-0}")
 
       # Check if any reply mentions us — only output if there are matches
       MENTION_MATCHES=$(echo "${REPLIES}" | jq --arg uid "${USER_ID}" '

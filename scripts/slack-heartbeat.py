@@ -22,6 +22,8 @@ import urllib.request
 from datetime import datetime
 from pathlib import Path
 
+SLACK_BASE = os.environ.get("SLACK_PROXY_URL") or "https://slack.com"
+
 DIGIT_NAMES = {
     1: "one", 2: "two", 3: "three", 4: "four", 5: "five",
     6: "six", 7: "seven", 8: "eight", 9: "nine", 10: "keycap_ten",
@@ -40,7 +42,7 @@ def slack_api(method: str, token: str, params: dict | None = None, post_data: di
     if post_data is not None:
         data = json.dumps(post_data).encode()
         req = urllib.request.Request(
-            f"https://slack.com/api/{method}",
+            f"{SLACK_BASE}/api/{method}",
             data=data,
             headers={
                 "Authorization": f"Bearer {token}",
@@ -49,7 +51,7 @@ def slack_api(method: str, token: str, params: dict | None = None, post_data: di
         )
     else:
         qs = "&".join(f"{k}={v}" for k, v in (params or {}).items())
-        url = f"https://slack.com/api/{method}?{qs}" if qs else f"https://slack.com/api/{method}"
+        url = f"{SLACK_BASE}/api/{method}?{qs}" if qs else f"{SLACK_BASE}/api/{method}"
         req = urllib.request.Request(url, headers={"Authorization": f"Bearer {token}"})
     with urllib.request.urlopen(req) as resp:
         return json.loads(resp.read())
