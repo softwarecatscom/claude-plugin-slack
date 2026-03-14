@@ -12,6 +12,13 @@ Post a release announcement to the team in Slack after tagging and pushing a new
 - `version` — version to announce (optional, defaults to latest git tag)
 - `channel` — channel to post in (optional, defaults to `DEFAULT_CHANNEL` from config)
 
+## Scripts
+
+Locate the plugin scripts once per session:
+```bash
+SCRIPTS_DIR=$(find ~/.claude/plugins/cache -path "*/scc-slack/*/scripts/slack-identity" 2>/dev/null | sort -V | tail -1 | xargs dirname)
+```
+
 ## Steps
 
 ### Step 1: Determine version and changelog
@@ -58,7 +65,7 @@ Format a concise Slack message:
 **Breaking:** [only if applicable]
 - [breaking change]
 
-Update with: /plugin
+Update with: /scc-slack:update
 ```
 
 Keep it scannable. One line per change. No commit hashes — the team doesn't need them.

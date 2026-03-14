@@ -7,6 +7,13 @@ description: Generate a status update or standup report. Use when the user says 
 
 Generate a full status report by gathering context from git, Linear, Slack, and the current session. Every standup includes both the Scrum update and session state — no separate formats.
 
+## Scripts
+
+Locate the plugin scripts once per session:
+```bash
+SCRIPTS_DIR=$(find ~/.claude/plugins/cache -path "*/scc-slack/*/scripts/slack-identity" 2>/dev/null | sort -V | tail -1 | xargs dirname)
+```
+
 ## Arguments
 
 - `post` — post the result to the default Slack channel after displaying it. Defaults to `true`. Pass `false` for local-only output.

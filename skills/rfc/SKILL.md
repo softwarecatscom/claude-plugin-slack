@@ -7,6 +7,13 @@ description: Draft and send an RFC (Request for Comments) to the team via Slack.
 
 Draft a proposal, post it to the team in Slack with `@here`, and collect feedback. Use this when a change affects the team — new workflows, skill changes, architectural decisions, conventions — and you want input before committing to it.
 
+## Scripts
+
+Locate the plugin scripts once per session:
+```bash
+SCRIPTS_DIR=$(find ~/.claude/plugins/cache -path "*/scc-slack/*/scripts/slack-identity" 2>/dev/null | sort -V | tail -1 | xargs dirname)
+```
+
 ## Arguments
 
 - `topic` — what the RFC is about (required)
