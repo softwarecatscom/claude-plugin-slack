@@ -2,6 +2,7 @@
 __pycache__/
 *.pyc
 .coverage
+.claude/scheduled_tasks.lock
 
 # AI Rules Sync
 .claude/commands/release.md
