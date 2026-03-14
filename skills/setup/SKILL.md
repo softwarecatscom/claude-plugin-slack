@@ -7,11 +7,18 @@ description: Install slack-cli and configure Slack credentials. Use when the use
 
 Install dependencies, configure a Slack app, and verify connectivity.
 
+## Scripts
+
+Locate the plugin scripts once per session:
+```bash
+SCRIPTS_DIR=$(find ~/.claude/plugins/cache -path "*/scc-slack/*/scripts/slack-identity" 2>/dev/null | sort -V | tail -1 | xargs dirname)
+```
+
 ## Step 1: Check dependencies
 
 Verify `curl` and `jq` are installed:
 ```bash
-which curl 2>/dev/null && which jq 2>/dev/null
+"${SCRIPTS_DIR}/slack-setup-verify" --deps
 ```
 If either is missing, install them:
 - **Debian/Ubuntu:** `sudo apt-get install -y curl jq`
@@ -23,28 +30,27 @@ The plugin ships with a shim script (`scripts/slack-shim`) that loads the token 
 
 ```bash
 PLUGIN_SHIM=$(find ~/.claude/plugins/cache -path "*/scc-slack/*/scripts/slack-shim" 2>/dev/null | sort -V | tail -1)
-if [ -z "$PLUGIN_SHIM" ]; then
-  echo "ERROR: slack-shim not found in plugin cache. Is the scc-slack plugin installed?" >&2
-  exit 1
-fi
-[ -L ~/.local/bin/slack ] && rm ~/.local/bin/slack
+```
+
+If `PLUGIN_SHIM` is empty, the plugin is not installed. Tell the user.
+
+Otherwise, install it:
+```bash
 mkdir -p ~/.local/bin
 cp "$PLUGIN_SHIM" ~/.local/bin/slack
 chmod +x ~/.local/bin/slack
-if ! grep -q "Shim for slack-cli" ~/.local/bin/slack; then
-  echo "ERROR: ~/.local/bin/slack is not the expected shim. Remove it and re-run setup." >&2
-  exit 1
-fi
 ```
+
+The `cp` overwrites any existing file (including stale symlinks).
 
 **If `which slack` returns a path outside `~/.local/bin`** (e.g., `/usr/local/bin/slack`), warn the user that a system-installed copy exists and will shadow the shim. Remove or rename the system copy so `~/.local/bin/slack` takes precedence.
 
 Verify the installed shim is correct:
 ```bash
-which slack 2>/dev/null && grep -c "Shim for slack-cli" "$(which slack)" && slack 2>&1 | head -1
+"${SCRIPTS_DIR}/slack-setup-verify" --shim
 ```
 
-The `grep -c` must return `1`. If it returns `0`, the file at that path is not the shim. Confirm the resolved path is `~/.local/bin/slack` (the copied shim), not a system copy or symlink.
+The output must say "verified". If it warns about a non-shim file or wrong path, help the user resolve it.
 
 If `~/.local/bin` is not on `$PATH`, tell the user to add it.
 
@@ -91,7 +97,7 @@ cat ~/.claude/slack.conf 2>/dev/null
 
 If config exists but contains a `SLACK_TOKEN=` line, strip it — the token is managed by slack-cli, not the config file:
 ```bash
-grep -v '^SLACK_TOKEN=' ~/.claude/slack.conf > /tmp/slack.conf.tmp && mv /tmp/slack.conf.tmp ~/.claude/slack.conf
+"${SCRIPTS_DIR}/slack-config-strip" SLACK_TOKEN
 ```
 
 If no config exists, ask the user for:
@@ -108,10 +114,9 @@ CONF
 
 ## Step 6: Verify
 
-Test connectivity with a curl call:
+Test API connectivity:
 ```bash
-SLACK_TOKEN=$(cat "$(dirname "$(which slack)")/.slack")
-curl -s -H "Authorization: Bearer $SLACK_TOKEN" https://slack.com/api/auth.test | jq '.ok, .team, .user'
+"${SCRIPTS_DIR}/slack-setup-verify" --auth
 ```
 
 If verification succeeds, confirm setup is complete. If it fails, show the error and help troubleshoot.

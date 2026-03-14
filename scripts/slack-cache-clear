@@ -1,0 +1,66 @@
+#!/usr/bin/env bash
+# Clear Slack resolve caches (users, channels, identity).
+#
+# Usage: slack-cache-clear [--users] [--channels] [--identity] [--all]
+#   --users     Clear the user display name cache
+#   --channels  Clear the channel name cache
+#   --identity  Clear the bot identity cache
+#   --all       Clear all caches (default if no args)
+#
+# The caches are rebuilt automatically on next use.
+
+set -euo pipefail
+
+CACHE_DIR="${HOME}/.claude/slack-cache"
+
+clear_users() {
+  if [ -f "${CACHE_DIR}/users" ]; then
+    rm -f "${CACHE_DIR}/users"
+    echo "Cleared: users cache"
+  else
+    echo "Skipped: users cache (not present)"
+  fi
+}
+
+clear_channels() {
+  if [ -f "${CACHE_DIR}/channels" ]; then
+    rm -f "${CACHE_DIR}/channels"
+    echo "Cleared: channels cache"
+  else
+    echo "Skipped: channels cache (not present)"
+  fi
+}
+
+clear_identity() {
+  if [ -f "${CACHE_DIR}/identity" ]; then
+    rm -f "${CACHE_DIR}/identity"
+    echo "Cleared: identity cache"
+  else
+    echo "Skipped: identity cache (not present)"
+  fi
+}
+
+# Parse args
+targets=()
+for arg in "$@"; do
+  case "${arg}" in
+    --users)    targets+=("users") ;;
+    --channels) targets+=("channels") ;;
+    --identity) targets+=("identity") ;;
+    --all)      targets=("users" "channels" "identity") ;;
+    *) echo "Unknown option: ${arg}" >&2; exit 1 ;;
+  esac
+done
+
+# Default: users + channels (not identity — that rarely goes stale)
+if [ ${#targets[@]} -eq 0 ]; then
+  targets=("users" "channels")
+fi
+
+for target in "${targets[@]}"; do
+  case "${target}" in
+    users)    clear_users ;;
+    channels) clear_channels ;;
+    identity) clear_identity ;;
+  esac
+done

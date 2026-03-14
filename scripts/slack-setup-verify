@@ -1,0 +1,111 @@
+#!/usr/bin/env bash
+# Verify Slack setup: check dependencies, shim installation, and auth.
+#
+# Usage: slack-setup-verify [--deps] [--shim] [--auth]
+#   --deps  Check that curl and jq are installed
+#   --shim  Verify the slack-cli shim is correctly installed
+#   --auth  Test API authentication
+#   (no args) Run all checks
+#
+# Exit code: 0 if all requested checks pass, 1 if any fail.
+# Output: human-readable status lines.
+
+set -euo pipefail
+
+check_deps() {
+  local ok=0
+  if command -v curl >/dev/null 2>&1; then
+    echo "curl: ok ($(command -v curl))"
+  else
+    echo "curl: MISSING" >&2
+    ok=1
+  fi
+  if command -v jq >/dev/null 2>&1; then
+    echo "jq: ok ($(command -v jq))"
+  else
+    echo "jq: MISSING" >&2
+    ok=1
+  fi
+  return $ok
+}
+
+check_shim() {
+  local slack_path
+  slack_path=$(command -v slack 2>/dev/null || true)
+  if [ -z "${slack_path}" ]; then
+    echo "shim: MISSING — slack not found on PATH" >&2
+    return 1
+  fi
+  echo "shim: found at ${slack_path}"
+  if grep -qc "Shim for slack-cli" "${slack_path}" 2>/dev/null; then
+    echo "shim: verified (contains shim marker)"
+  else
+    echo "shim: WARNING — file at ${slack_path} is not the expected shim" >&2
+    return 1
+  fi
+  local expected="${HOME}/.local/bin/slack"
+  if [ "${slack_path}" != "${expected}" ]; then
+    echo "shim: WARNING — expected ${expected}, got ${slack_path}. A system copy may be shadowing the shim." >&2
+    return 1
+  fi
+  return 0
+}
+
+check_auth() {
+  local token_file
+  token_file="$(dirname "$(command -v slack)")/.slack"
+  if [ ! -r "${token_file}" ]; then
+    echo "auth: MISSING — no .slack token file found" >&2
+    return 1
+  fi
+  local token
+  token=$(head -1 "${token_file}")
+  if [ -z "${token}" ]; then
+    echo "auth: MISSING — token file is empty" >&2
+    return 1
+  fi
+
+  # Proxy support
+  local base="${SLACK_PROXY_URL:-https://slack.com}"
+  local result
+  result=$(curl -s -H "Authorization: Bearer ${token}" "${base}/api/auth.test")
+  local ok team user
+  ok=$(echo "${result}" | jq -r '.ok')
+  if [ "${ok}" = "true" ]; then
+    team=$(echo "${result}" | jq -r '.team // "unknown"')
+    user=$(echo "${result}" | jq -r '.user // "unknown"')
+    echo "auth: ok (team=${team}, user=${user})"
+  else
+    local err
+    err=$(echo "${result}" | jq -r '.error // "unknown"')
+    echo "auth: FAILED — ${err}" >&2
+    return 1
+  fi
+}
+
+# Parse args
+checks=()
+for arg in "$@"; do
+  case "${arg}" in
+    --deps) checks+=("deps") ;;
+    --shim) checks+=("shim") ;;
+    --auth) checks+=("auth") ;;
+    *) echo "Unknown option: ${arg}" >&2; exit 1 ;;
+  esac
+done
+
+# Default: all checks
+if [ ${#checks[@]} -eq 0 ]; then
+  checks=("deps" "shim" "auth")
+fi
+
+failed=0
+for check in "${checks[@]}"; do
+  case "${check}" in
+    deps) check_deps || failed=1 ;;
+    shim) check_shim || failed=1 ;;
+    auth) check_auth || failed=1 ;;
+  esac
+done
+
+exit $failed
