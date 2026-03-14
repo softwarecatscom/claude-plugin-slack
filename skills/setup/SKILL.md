@@ -14,9 +14,11 @@ Locate the plugin scripts once per session:
 SCRIPTS_DIR=$(find ~/.claude/plugins/cache -path "*/scc-slack/*/scripts/slack-identity" 2>/dev/null | sort -V | tail -1 | xargs dirname)
 ```
 
+**Prefer `ctx_execute` over Bash** when running scripts that produce output. This keeps raw output in the sandbox and protects your context window. Use Bash only for the `SCRIPTS_DIR` setup above and file mutation commands (`mkdir`, `cp`, `cat >`).
+
 ## Step 1: Check dependencies
 
-Verify `curl` and `jq` are installed:
+Verify `curl` and `jq` are installed (via `ctx_execute`):
 ```bash
 "${SCRIPTS_DIR}/slack-setup-verify" --deps
 ```
@@ -45,7 +47,7 @@ The `cp` overwrites any existing file (including stale symlinks).
 
 **If `which slack` returns a path outside `~/.local/bin`** (e.g., `/usr/local/bin/slack`), warn the user that a system-installed copy exists and will shadow the shim. Remove or rename the system copy so `~/.local/bin/slack` takes precedence.
 
-Verify the installed shim is correct:
+Verify the installed shim is correct (via `ctx_execute`):
 ```bash
 "${SCRIPTS_DIR}/slack-setup-verify" --shim
 ```
@@ -114,7 +116,7 @@ CONF
 
 ## Step 6: Verify
 
-Test API connectivity:
+Test API connectivity (via `ctx_execute`):
 ```bash
 "${SCRIPTS_DIR}/slack-setup-verify" --auth
 ```

@@ -19,7 +19,7 @@ This pulls the latest version from the scc-marketplace registry.
 
 ### Step 2: Clear caches
 
-Remove stale cached data that may cause issues with the new version:
+Remove stale cached data that may cause issues with the new version (via `ctx_execute`):
 
 ```bash
 SCRIPTS_DIR=$(find ~/.claude/plugins/cache -path "*/scc-slack/*/scripts/slack-identity" 2>/dev/null | sort -V | tail -1 | xargs dirname)
@@ -42,12 +42,12 @@ Before reporting success, complete all of these checks:
    ```
    The new version directory should be present.
 
-2. **Test poll** — run a test poll to verify the scripts work:
+2. **Test poll** — run a test poll via `ctx_execute` to verify the scripts work:
    ```bash
    SCRIPTS_DIR=$(find ~/.claude/plugins/cache -path "*/scc-slack/*/scripts/slack-identity" 2>/dev/null | sort -V | tail -1 | xargs dirname)
-   "${SCRIPTS_DIR}/slack-poll" > /tmp/slack-poll-test.json 2>/tmp/slack-poll-test-err.txt
+   "${SCRIPTS_DIR}/slack-poll"
    ```
-   Read `/tmp/slack-poll-test.json` — verify the output contains channel headers (`# channel=...`) and a heartbeat line (`ok: :<digit>: v<version>`). Check `/tmp/slack-poll-test-err.txt` for errors.
+   Verify the output contains channel headers (`# channel=...`) and a heartbeat line (`ok: :<digit>: v<version>`). Check for errors.
 
 3. **Polling version** — confirm the reload applied the new version path:
    ```bash

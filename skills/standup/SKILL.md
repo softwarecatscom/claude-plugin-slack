@@ -94,7 +94,7 @@ Every standup includes all of the following:
 
 ### Step 1: Gather context
 
-Run these in parallel to collect data:
+Run these via `ctx_execute` to collect data (keeps output in sandbox):
 
 ```bash
 # Recent commits (this session — last ~2 hours or since session start)

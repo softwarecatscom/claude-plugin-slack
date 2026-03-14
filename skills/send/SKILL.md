@@ -23,6 +23,8 @@ SCRIPTS_DIR=$(find ~/.claude/plugins/cache -path "*/scc-slack/*/scripts/slack-id
 
 **ALWAYS use `slack-send` to post messages.** Do NOT call `chat.postMessage` directly with curl. The script handles token loading, channel resolution, `@Name` → `<@USERID>` mention resolution, and broadcast encoding (`@here` → `<!here>`). Calling the API directly bypasses this and introduces bugs.
 
+**Prefer `ctx_execute` over Bash** when running scripts that produce output. This keeps raw output in the sandbox and protects your context window.
+
 **NEVER self-resolve mentions.** Always pass human-readable text and let `slack-send` handle all resolution:
 - Write `@Christo`, not `<@U09GJ25DZCP>` — the script resolves display names to user IDs
 - Write `@here`, `@channel`, `@everyone` — the script converts to Slack encoding (`<!here>`, etc.)

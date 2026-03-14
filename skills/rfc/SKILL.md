@@ -26,6 +26,8 @@ Draft a proposal, post it to the team in Slack with `@here`, and collect feedbac
 - Changes scoped entirely to your own agent
 - Work that's already been approved or assigned
 
+**Prefer `ctx_execute` over Bash** when running scripts that produce output. This keeps raw output in the sandbox and protects your context window.
+
 ## Steps
 
 ### Step 1: Draft the proposal

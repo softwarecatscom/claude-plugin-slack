@@ -42,6 +42,8 @@ Locate the plugin scripts once per session:
 SCRIPTS_DIR=$(find ~/.claude/plugins/cache -path "*/scc-slack/*/scripts/slack-identity" 2>/dev/null | sort -V | tail -1 | xargs dirname)
 ```
 
+**Prefer `ctx_execute` over Bash** when running scripts that produce output. This keeps raw output in the sandbox and protects your context window.
+
 ## Steps
 
 ### Step 1: Load scripts
@@ -71,7 +73,7 @@ In priority order:
 
 ### Step 4: Dedup check
 
-Before reacting, check if you have already reacted to this message with this emoji:
+Before reacting, check if you have already reacted to this message with this emoji (via `ctx_execute`):
 
 ```bash
 "${SCRIPTS_DIR}/slack-react" --check "${CHANNEL_ID}" "${MESSAGE_TS}" "${EMOJI}"
