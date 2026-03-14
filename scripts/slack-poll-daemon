@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+# Shell wrapper for slack-poll-daemon.py
 # Long-running daemon that polls Slack and only exits when actionable messages arrive.
 # Designed to run via Bash(run_in_background: true) for zero-token polling.
 #
@@ -9,99 +10,9 @@
 #   slack-poll-daemon --once   — run a single cycle (for testing)
 #   slack-poll-daemon --stop   — stop any running daemon
 #   slack-poll-daemon --status — check if daemon is running
-#
-# Output: Same format as slack-poll (# comment lines + JSON arrays)
-#         Only produces output when actionable messages are found.
-#
-# Exit codes:
-#   0 — actionable messages found (output on stdout) or --once/--stop/--status
-#   1 — error
 
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-CONFIG_FILE="${HOME}/.claude/slack.conf"
-PID_FILE="${HOME}/.claude/slack-poll-daemon.pid"
 
-# Load config
-if [ -f "${CONFIG_FILE}" ]; then
-  # shellcheck disable=SC1090
-  source "${CONFIG_FILE}"
-fi
-
-POLL_INTERVAL="${SLACK_POLL_INTERVAL:-60}"
-
-# --- Commands ---
-
-ONCE=false
-
-case "${1:-}" in
-  --stop)
-    if [ -f "${PID_FILE}" ]; then
-      OLD_PID=$(cat "${PID_FILE}" 2>/dev/null || true)
-      if [ -n "${OLD_PID}" ] && kill -0 "${OLD_PID}" 2>/dev/null; then
-        kill "${OLD_PID}" 2>/dev/null || true
-        echo "Stopped daemon (PID ${OLD_PID})"
-      else
-        echo "Daemon not running (stale PID file)"
-      fi
-      rm -f "${PID_FILE}"
-    else
-      echo "Daemon not running"
-    fi
-    exit 0
-    ;;
-  --status)
-    if [ -f "${PID_FILE}" ]; then
-      OLD_PID=$(cat "${PID_FILE}" 2>/dev/null || true)
-      if [ -n "${OLD_PID}" ] && kill -0 "${OLD_PID}" 2>/dev/null; then
-        echo "running (PID ${OLD_PID})"
-      else
-        echo "stopped (stale PID file)"
-        rm -f "${PID_FILE}"
-      fi
-    else
-      echo "stopped"
-    fi
-    exit 0
-    ;;
-  --once)
-    ONCE=true
-    ;;
-esac
-
-# --- Prevent duplicate daemons ---
-
-if [ -f "${PID_FILE}" ]; then
-  OLD_PID=$(cat "${PID_FILE}" 2>/dev/null || true)
-  if [ -n "${OLD_PID}" ] && kill -0 "${OLD_PID}" 2>/dev/null; then
-    echo "ERROR: Daemon already running (PID ${OLD_PID}). Use --stop first." >&2
-    exit 1
-  fi
-  rm -f "${PID_FILE}"
-fi
-
-echo $$ > "${PID_FILE}"
-trap 'rm -f "${PID_FILE}"' EXIT
-
-# --- Main loop ---
-
-while true; do
-  # Run slack-poll (handles: fetch, filter, cursor advance, heartbeat)
-  OUTPUT=$("${SCRIPT_DIR}/slack-poll" 2>/dev/null) || true
-
-  # Tick mention tracker (normally done by read skill on each cycle)
-  "${SCRIPT_DIR}/slack-mention-tracker" tick 2>/dev/null || true
-
-  # Check for actionable messages: any line starting with [{ is a non-empty JSON array
-  if echo "${OUTPUT}" | grep -q '^\[{'; then
-    echo "${OUTPUT}"
-    exit 0
-  fi
-
-  if [ "${ONCE}" = true ]; then
-    exit 0
-  fi
-
-  sleep "${POLL_INTERVAL}"
-done
+exec uv run --no-project "${SCRIPT_DIR}/slack-poll-daemon.py" "$@"
