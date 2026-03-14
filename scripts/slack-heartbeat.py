@@ -363,7 +363,7 @@ def main():
         their_digit = parse_digit(peer_text)
         if their_digit is not None:
             gap = (digit - their_digit + 10) % 10
-            if gap >= 2:
+            if gap >= 5:
                 stale.append(f"{display} (digit {their_digit}, {gap} behind)")
 
         # Version check
