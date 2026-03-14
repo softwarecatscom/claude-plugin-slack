@@ -1,0 +1,1 @@
+../../../agent-rules-repo/.claude/rules/agent-behavior.md

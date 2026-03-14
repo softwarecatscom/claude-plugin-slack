@@ -1,0 +1,1 @@
+../../../agent-rules-repo/.claude/agents/claude-bowser-agent.md
