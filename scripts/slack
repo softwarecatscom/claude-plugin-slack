@@ -15,6 +15,9 @@ fi
 
 # Proxy support: use proxy if configured, fall back to direct Slack
 SLACK_API_BASE="${SLACK_PROXY_URL:-https://slack.com}"
+SCRIPT_DIR="${bindir}"
+# shellcheck disable=SC1091
+source "${SCRIPT_DIR}/slack-common"
 
 # COMMAND PARSING #################################################################################
 cmd="${1}" ; shift
@@ -257,10 +260,10 @@ function lchannel() {
   case "${channel}" in
     @*)
       local _user=$(\
-        curl -s -X POST ${SLACK_API_BASE}/api/users.list --data-urlencode "token=${token}" 2>&1 | \
+        slack_curl -s -X POST ${SLACK_API_BASE}/api/users.list --data-urlencode "token=${token}" 2>&1 | \
         jq -r ".members | map(select(.name == \"${channel/@/}\" or .profile.display_name == \"${channel/@/}\")) | .[0].id")
       local _channel=$(\
-        curl -s -X POST ${SLACK_API_BASE}/api/im.list --data-urlencode "token=${token}" 2>&1 | \
+        slack_curl -s -X POST ${SLACK_API_BASE}/api/im.list --data-urlencode "token=${token}" 2>&1 | \
         jq -r ".ims | map(select(.user == \"${_user}\")) | .[].id")
 
       echo ${_channel}
@@ -273,7 +276,7 @@ function luser() {
   case "${user}" in
     @*)
       local _user=$(\
-        curl -s -X POST ${SLACK_API_BASE}/api/users.list --data-urlencode "token=${token}" 2>&1 | \
+        slack_curl -s -X POST ${SLACK_API_BASE}/api/users.list --data-urlencode "token=${token}" 2>&1 | \
         jq -r ".members | map(select(.name == \"${user/@/}\" or .profile.display_name == \"${user/@/}\")) | .[0].id")
 
       echo ${_user}
@@ -285,7 +288,7 @@ function luser() {
 # COMMAND FUNCTIONS ###############################################################################
 function chatdelete() {
   local msg=$(\
-    curl -s -X POST ${SLACK_API_BASE}/api/chat.delete \
+    slack_curl -s -X POST ${SLACK_API_BASE}/api/chat.delete \
       --data-urlencode "as_user=true" \
       --data-urlencode "channel=$(lchannel)" \
       --data-urlencode "ts=${timestamp}" \
@@ -298,7 +301,7 @@ function chatsend() {
   [ -n "${stdin}" ] && [ -z "${text}" ] && text=\`\`\`${stdin//$'\n'/'\n'}\`\`\`
 
   local msg=$(\
-    curl -s -X POST ${SLACK_API_BASE}/api/chat.postMessage \
+    slack_curl -s -X POST ${SLACK_API_BASE}/api/chat.postMessage \
       --data-urlencode "as_user=true" \
       --data-urlencode "text=${text}" \
       --data-urlencode "attachments=$(attachify)" \
@@ -312,7 +315,7 @@ function chatupdate() {
   [ -n "${stdin}" ] && [ -z "${text}" ] && text=\`\`\`${stdin//$'\n'/'\n'}\`\`\`
 
   local msg=$(\
-    curl -s -X POST ${SLACK_API_BASE}/api/chat.update \
+    slack_curl -s -X POST ${SLACK_API_BASE}/api/chat.update \
       --data-urlencode "as_user=true" \
       --data-urlencode "attachments=$(attachify)" \
       --data-urlencode "channel=$(lchannel)" \
@@ -454,7 +457,7 @@ function help() {
 
 function filedelete() {
   local msg=$(\
-    curl -s -X POST ${SLACK_API_BASE}/api/files.delete \
+    slack_curl -s -X POST ${SLACK_API_BASE}/api/files.delete \
       --data-urlencode "file=${file}" \
       --data-urlencode "token=${token}")
 
@@ -463,7 +466,7 @@ function filedelete() {
 
 function fileinfo() {
   local msg=$(\
-    curl -s -X POST ${SLACK_API_BASE}/api/files.info \
+    slack_curl -s -X POST ${SLACK_API_BASE}/api/files.info \
       ${count:+ --data-urlencode "count=${count}"} \
       --data-urlencode "file=${file}" \
       ${page:+ --data-urlencode "page=${page}"} \
@@ -474,7 +477,7 @@ function fileinfo() {
 
 function filelist() {
   local msg=$(\
-    curl -s -X POST ${SLACK_API_BASE}/api/files.list \
+    slack_curl -s -X POST ${SLACK_API_BASE}/api/files.list \
       ${channel:+ --data-urlencode "channel=${channel}"} \
       ${count:+ --data-urlencode "count=${count}"} \
       ${page:+ --data-urlencode "page=${page}"} \
@@ -509,7 +512,7 @@ function fileupload() {
   case "${_file}" in
     '')
       local msg=$(\
-        curl -s -X POST ${SLACK_API_BASE}/api/files.upload \
+        slack_curl -s -X POST ${SLACK_API_BASE}/api/files.upload \
           ${channels:+ --data-urlencode "channels=${channels}"} \
           ${comment:+ --data-urlencode "initial_comment=${comment}"} \
           ${_content:+ --data-urlencode "content=${_content}"} \
@@ -520,7 +523,7 @@ function fileupload() {
     ;;
     *)
       local msg=$(\
-        curl -s -X POST ${SLACK_API_BASE}/api/files.upload \
+        slack_curl -s -X POST ${SLACK_API_BASE}/api/files.upload \
           ${channels:+ --form-string "channels=${channels}"} \
           ${comment:+ --form "initial_comment=${comment}"} \
           ${_file:+ --form "file=@${_file}"} \
@@ -549,12 +552,12 @@ function init() {
 # Setting presence=auto + setActive works more consistently than just setActive.
 function presenceactive() {
   local msg0=$(\
-    curl -s -X POST ${SLACK_API_BASE}/api/users.setPresence \
+    slack_curl -s -X POST ${SLACK_API_BASE}/api/users.setPresence \
       --data-urlencode "presence=auto" \
       --data-urlencode "token=${token}")
 
   local msg1=$(\
-    curl -s -X POST ${SLACK_API_BASE}/api/users.setActive \
+    slack_curl -s -X POST ${SLACK_API_BASE}/api/users.setActive \
       --data-urlencode "token=${token}")
 
   jqify "${msg0}" && jqify "${msg1}" >/dev/null 2>&1
@@ -562,7 +565,7 @@ function presenceactive() {
 
 function presenceaway() {
   local msg=$(\
-    curl -s -X POST ${SLACK_API_BASE}/api/users.setPresence \
+    slack_curl -s -X POST ${SLACK_API_BASE}/api/users.setPresence \
       --data-urlencode "presence=away" \
       --data-urlencode "token=${token}")
 
@@ -571,7 +574,7 @@ function presenceaway() {
 
 function reminderadd() {
   local msg=$(\
-    curl -s -X POST ${SLACK_API_BASE}/api/reminders.add \
+    slack_curl -s -X POST ${SLACK_API_BASE}/api/reminders.add \
       --data-urlencode "text=${text}" \
       --data-urlencode "time=${_time}" \
       ${user:+ --data-urlencode "user=$(luser)"} \
@@ -582,7 +585,7 @@ function reminderadd() {
 
 function remindercomplete() {
   local msg=$(\
-    curl -s -X POST ${SLACK_API_BASE}/api/reminders.complete \
+    slack_curl -s -X POST ${SLACK_API_BASE}/api/reminders.complete \
       --data-urlencode "reminder=${reminder}" \
       --data-urlencode "token=${token}")
 
@@ -591,7 +594,7 @@ function remindercomplete() {
 
 function reminderdelete() {
   local msg=$(\
-    curl -s -X POST ${SLACK_API_BASE}/api/reminders.delete \
+    slack_curl -s -X POST ${SLACK_API_BASE}/api/reminders.delete \
       --data-urlencode "reminder=${reminder}" \
       --data-urlencode "token=${token}")
 
@@ -600,7 +603,7 @@ function reminderdelete() {
 
 function reminderinfo() {
   local msg=$(\
-    curl -s -X POST ${SLACK_API_BASE}/api/reminders.info \
+    slack_curl -s -X POST ${SLACK_API_BASE}/api/reminders.info \
       --data-urlencode "reminder=${reminder}" \
       --data-urlencode "token=${token}")
 
@@ -609,7 +612,7 @@ function reminderinfo() {
 
 function reminderlist() {
   local msg=$(\
-    curl -s -X POST ${SLACK_API_BASE}/api/reminders.list \
+    slack_curl -s -X POST ${SLACK_API_BASE}/api/reminders.list \
       --data-urlencode "token=${token}")
 
   jqify "${msg}"
@@ -617,7 +620,7 @@ function reminderlist() {
 
 function snoozeend() {
   local msg=$(\
-    curl -s -X POST ${SLACK_API_BASE}/api/dnd.endSnooze \
+    slack_curl -s -X POST ${SLACK_API_BASE}/api/dnd.endSnooze \
       --data-urlencode "token=${token}")
 
   jqify "${msg}"
@@ -625,7 +628,7 @@ function snoozeend() {
 
 function snoozeinfo() {
   local msg=$(\
-    curl -s -X POST ${SLACK_API_BASE}/api/dnd.info \
+    slack_curl -s -X POST ${SLACK_API_BASE}/api/dnd.info \
       ${user:+ --data-urlencode "user=$(luser)"} \
       --data-urlencode "token=${token}")
 
@@ -634,7 +637,7 @@ function snoozeinfo() {
 
 function snoozestart() {
   local msg=$(\
-    curl -s -X POST ${SLACK_API_BASE}/api/dnd.setSnooze \
+    slack_curl -s -X POST ${SLACK_API_BASE}/api/dnd.setSnooze \
       --data-urlencode "num_minutes=${minutes}" \
       --data-urlencode "token=${token}")
 
@@ -643,7 +646,7 @@ function snoozestart() {
 
 function statusclear() {
   local msg=$(\
-    curl -s -X POST ${SLACK_API_BASE}/api/users.profile.set \
+    slack_curl -s -X POST ${SLACK_API_BASE}/api/users.profile.set \
       --data-urlencode 'profile={"status_text":"", "status_emoji":""}' \
       --data-urlencode "token=${token}")
 
@@ -652,7 +655,7 @@ function statusclear() {
 
 function statusedit() {
   local msg=$(\
-    curl -s -X POST ${SLACK_API_BASE}/api/users.profile.set \
+    slack_curl -s -X POST ${SLACK_API_BASE}/api/users.profile.set \
       --data-urlencode "profile={\"status_text\":\"${text}\", \"status_emoji\":\"${emoji}\"}" \
       --data-urlencode "token=${token}")
 

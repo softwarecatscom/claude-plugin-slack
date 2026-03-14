@@ -21,6 +21,8 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
 # Proxy support: use proxy if configured, fall back to direct Slack
 SLACK_API_BASE="${SLACK_PROXY_URL:-https://slack.com}"
+# shellcheck disable=SC1091
+source "${SCRIPT_DIR}/slack-common"
 
 # Parse all args: extract flags from any position, collect positionals
 THREAD_TS=""
@@ -104,7 +106,7 @@ else
 fi
 
 # Send via API
-RESPONSE=$(curl -s -X POST "${API_ENDPOINT}" \
+RESPONSE=$(slack_curl -s -X POST "${API_ENDPOINT}" \
   -H "Authorization: Bearer ${SLACK_TOKEN}" \
   -H "Content-type: application/json; charset=utf-8" \
   -d "$(jq -n "${JQ_ARGS[@]}" "${JQ_EXPR}")")

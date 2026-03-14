@@ -22,11 +22,15 @@ import os
 import re
 import subprocess
 import sys
+import time
+import urllib.error
 import urllib.request
 from datetime import datetime
 from pathlib import Path
 
 SLACK_BASE = os.environ.get("SLACK_PROXY_URL") or "https://slack.com"
+SLACK_DIRECT = "https://slack.com"
+FALLBACK_STATE_FILE = Path.home() / ".claude" / "slack-proxy-fallback-alerted"
 
 DIGIT_NAMES = {
     1: "one", 2: "two", 3: "three", 4: "four", 5: "five",
@@ -41,24 +45,52 @@ SLACK_CONF = HOME / ".claude" / "slack.conf"
 IDENTITY_FILE = HOME / ".claude" / "slack-cache" / "identity"
 
 
-def slack_api(method: str, token: str, params: dict | None = None, post_data: dict | None = None) -> dict:
-    """Call a Slack API method. GET if params only, POST if post_data provided."""
+def _build_request(base: str, method: str, token: str, params: dict | None = None, post_data: dict | None = None) -> urllib.request.Request:
+    """Build a urllib Request for a Slack API call."""
     if post_data is not None:
         data = json.dumps(post_data).encode()
-        req = urllib.request.Request(
-            f"{SLACK_BASE}/api/{method}",
+        return urllib.request.Request(
+            f"{base}/api/{method}",
             data=data,
             headers={
                 "Authorization": f"Bearer {token}",
                 "Content-type": "application/json; charset=utf-8",
             },
         )
-    else:
-        qs = "&".join(f"{k}={v}" for k, v in (params or {}).items())
-        url = f"{SLACK_BASE}/api/{method}?{qs}" if qs else f"{SLACK_BASE}/api/{method}"
-        req = urllib.request.Request(url, headers={"Authorization": f"Bearer {token}"})
-    with urllib.request.urlopen(req) as resp:
-        return json.loads(resp.read())
+    qs = "&".join(f"{k}={v}" for k, v in (params or {}).items())
+    url = f"{base}/api/{method}?{qs}" if qs else f"{base}/api/{method}"
+    return urllib.request.Request(url, headers={"Authorization": f"Bearer {token}"})
+
+
+def _fallback_warn(error: Exception) -> None:
+    """Emit a one-time fallback warning (10-min cooldown)."""
+    now = int(time.time())
+    last_alert = 0
+    if FALLBACK_STATE_FILE.exists():
+        try:
+            last_alert = int(FALLBACK_STATE_FILE.read_text().strip())
+        except (ValueError, OSError):
+            pass
+    if now - last_alert >= 600:
+        print(f"WARN: Proxy {SLACK_BASE} unreachable ({error}), falling back to direct Slack", file=sys.stderr)
+        FALLBACK_STATE_FILE.parent.mkdir(parents=True, exist_ok=True)
+        FALLBACK_STATE_FILE.write_text(str(now))
+
+
+def slack_api(method: str, token: str, params: dict | None = None, post_data: dict | None = None) -> dict:
+    """Call a Slack API method with proxy fallback. GET if params only, POST if post_data."""
+    req = _build_request(SLACK_BASE, method, token, params, post_data)
+    try:
+        with urllib.request.urlopen(req) as resp:
+            return json.loads(resp.read())
+    except (urllib.error.URLError, ConnectionError, TimeoutError) as e:
+        # Only retry if using proxy
+        if SLACK_BASE == SLACK_DIRECT:
+            raise
+        _fallback_warn(e)
+        req = _build_request(SLACK_DIRECT, method, token, params, post_data)
+        with urllib.request.urlopen(req) as resp:
+            return json.loads(resp.read())
 
 
 def load_token() -> str:
