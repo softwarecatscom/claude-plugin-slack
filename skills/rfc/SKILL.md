@@ -75,7 +75,7 @@ Please reply with feedback, concerns, or +1 if you agree."
 
 ### Step 4: Collect feedback
 
-Monitor responses via the read skill (or polling loop). For each response:
+Expect responses as actionable messages from the `scc-slack:loop` skill. For each response:
 
 - Note whether it's an approval (+1, "looks good"), a concern, a suggestion, or a question
 - If a response raises a valid point, acknowledge it: "Good point, I'll adjust X"
