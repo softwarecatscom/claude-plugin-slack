@@ -78,6 +78,7 @@ ignore = [
 #    "UP038",    # Use X | Y for isinstance
     "UP042",    # Module level import not at top of file
     "N999",     # Invalid module name
+    "UP017",    # datetime.UTC alias (not available when from datetime import datetime)
 
     # From current selfpub-wizard config (keep these)
     "ANN001",   # Missing type annotation for function argument

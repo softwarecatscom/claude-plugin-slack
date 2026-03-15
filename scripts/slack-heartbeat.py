@@ -27,7 +27,7 @@ import sys
 import time
 import urllib.error
 import urllib.request
-from datetime import datetime
+from datetime import datetime, timezone
 from pathlib import Path
 
 SLACK_BASE = os.environ.get("SLACK_PROXY_URL") or "https://slack.com"
@@ -209,13 +209,13 @@ def calculate_heartbeat(maintenance: bool = False, duration: str | None = None) 
 
     If maintenance is True, appends '| Maintenance <ISO> [for <duration>]'.
     """
-    minute = datetime.now(tz=datetime.UTC).minute
+    minute = datetime.now(tz=timezone.utc).minute
     digit = (minute // 6) + 1
     emoji = f":{DIGIT_NAMES[digit]}:"
     version = detect_version()
     text = f"{emoji} v{version}"
     if maintenance:
-        iso_time = datetime.now(tz=datetime.UTC).strftime("%Y-%m-%dT%H:%M")
+        iso_time = datetime.now(tz=timezone.utc).strftime("%Y-%m-%dT%H:%M")
         text += f" | Maintenance {iso_time}"
         if duration:
             text += f" for {duration}"
@@ -423,7 +423,7 @@ def _check_peers(bot_msgs: dict[str, dict], digit: int, heartbeat_text: str) -> 
 
 def _fetch_recent_alerts(token: str, channel_id: str) -> list[str]:
     """Fetch recent bot messages for dedup checking."""
-    now_ts = datetime.now(tz=datetime.UTC).timestamp()
+    now_ts = datetime.now(tz=timezone.utc).timestamp()
     oldest_ts = str(now_ts - DEDUP_COOLDOWN_SECONDS)
     try:
         history = slack_api(
