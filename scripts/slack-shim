@@ -5,7 +5,8 @@ shimdir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
 # 1. Load token from .slack next to this shim
 if [ -r "${shimdir}/.slack" ] && [ -f "${shimdir}/.slack" ]; then
-  export SLACK_CLI_TOKEN=$(sed -n '1p' < "${shimdir}/.slack")
+  SLACK_CLI_TOKEN=$(sed -n '1p' < "${shimdir}/.slack")
+  export SLACK_CLI_TOKEN
 fi
 
 # 2. Find latest vendored slack-cli from plugin cache
@@ -29,7 +30,7 @@ if [ "${1}" = "init" ]; then
   done
 
   if [ -z "${_token}" ]; then
-    read -e -p 'Enter Slack API token: ' _token
+    read -r -e -p 'Enter Slack API token: ' _token
   fi
 
   if [ -n "${_token}" ]; then

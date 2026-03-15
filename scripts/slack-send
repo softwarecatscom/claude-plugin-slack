@@ -1,6 +1,8 @@
 #!/usr/bin/env bash
+# shellcheck disable=SC2016
 # Send or edit a Slack message with automatic @name and #channel resolution.
 # Resolves @DisplayName to <@USERID> and #channel to the channel ID using the resolve cache.
+# SC2016 disabled: jq expressions use $var syntax in single quotes intentionally.
 #
 # Usage: slack-send [--thread PARENT_TS] [--broadcast] [--update TS] CHANNEL TEXT
 #   CHANNEL     — channel name (without #) or channel ID
