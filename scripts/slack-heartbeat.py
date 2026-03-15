@@ -108,7 +108,7 @@ def save_conf(path: Path, data: dict) -> None:
 
 def detect_version() -> str:
     """Detect scc-slack version from script path or plugin.json."""
-    match = re.search(r"(\d+\.\d+\.\d+)", str(SCRIPT_DIR))
+    match = re.search(r"(\d+\.\d+\.\d+(?:-[a-zA-Z0-9.]+)?)", str(SCRIPT_DIR))
     if match:
         return match.group(1)
     # Fallback: read from plugin.json (when running from repo)
