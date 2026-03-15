@@ -20,49 +20,41 @@ import contextlib
 import importlib
 import json
 import os
-import re
-import shutil
 import signal
 import sys
 import time
+from functools import partial
 from pathlib import Path
 from typing import Optional
 
-import httpx
 import typer
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
-from scc_slack.identity import load_identity
+from scc_slack import (
+    SlackClient,
+    filter_messages,
+    load_config,
+    load_identity,
+    load_seen,
+    load_token,
+    resolve_channel,
+    resolve_user,
+    save_seen,
+)
 from slack_cli_options import COMMON_OPTIONS
 
 # Import sibling modules (hyphenated names need importlib)
 _heartbeat_mod = importlib.import_module("slack-heartbeat")
 _mention_tracker_mod = importlib.import_module("slack-mention-tracker")
 
-# --- Paths ---
-
-CONFIG_FILE = Path.home() / ".claude" / "slack.conf"
-SEEN_FILE = Path.home() / ".claude" / "slack-seen.json"
-CHANNEL_CACHE = Path.home() / ".claude" / "slack-cache" / "channels"
-USER_CACHE = Path.home() / ".claude" / "slack-cache" / "users"
-PID_FILE = Path.home() / ".claude" / "slack-poll.pid"
-FALLBACK_STATE_FILE = Path.home() / ".claude" / "slack-proxy-fallback-alerted"
-
 # --- Constants ---
 
 DEFAULT_POLL_INTERVAL = 60
 HISTORY_LIMIT = 20
 THREAD_HISTORY_LIMIT = 50
-CATCHUP_ACTIONABLE_LIMIT = 5  # on first run / long offline, only act on last N messages
 MAX_THREADS = 5
-FALLBACK_COOLDOWN = 600  # 10 minutes
-
-BROADCAST_RE = re.compile(
-    r"<!here>|<!channel>|<!everyone>"
-    r"|(^|\s)@here(\s|$)"
-    r"|(^|\s)@channel(\s|$)"
-    r"|(^|\s)@everyone(\s|$)",
-)
+CATCHUP_ACTIONABLE_LIMIT = 5
+PID_FILE = Path.home() / ".claude" / "slack-poll.pid"
 
 # --- Daemon Options ---
 
@@ -109,242 +101,17 @@ def _debug_log(msg: str) -> None:
         typer.echo(f"DEBUG: {msg}", err=True)
 
 
-# --- Config ---
-
-
-def _parse_key_value_file(path: Path) -> dict[str, str]:
-    """Parse a KEY=VALUE file, stripping quotes and comments."""
-    result: dict[str, str] = {}
-    if not path.exists():
-        return result
-    for raw_line in path.read_text().splitlines():
-        stripped = raw_line.strip()
-        if not stripped or stripped.startswith("#"):
-            continue
-        if "=" in stripped:
-            key, _, value = stripped.partition("=")
-            result[key.strip()] = value.strip().strip('"').strip("'")
-    return result
-
-
-def load_config() -> dict[str, str]:
-    """Load key=value config from slack.conf."""
-    if not CONFIG_FILE.exists():
-        typer.echo(f"ERROR: No config at {CONFIG_FILE}", err=True)
-        raise typer.Exit(code=1)
-    _debug_log(f"Loading config from {CONFIG_FILE}")
-    return _parse_key_value_file(CONFIG_FILE)
-
-
-def load_token() -> str:
-    """Load Slack token from slack-cli's .slack file."""
-    slack_bin = shutil.which("slack")
-    if not slack_bin:
-        typer.echo("ERROR: slack-cli not found in PATH", err=True)
-        raise typer.Exit(code=1)
-    token_file = Path(slack_bin).parent / ".slack"
-    if not token_file.exists():
-        typer.echo("ERROR: No Slack token found.", err=True)
-        raise typer.Exit(code=1)
-    return token_file.read_text().strip()
-
-
-# --- HTTP client with proxy fallback ---
-
-
-class SlackClient:
-    """HTTP client for Slack API with proxy fallback."""
-
-    def __init__(self, token: str, proxy_url: str | None = None) -> None:
-        self.base_url = proxy_url or "https://slack.com"
-        self.direct_url = "https://slack.com"
-        self.using_proxy = self.base_url != self.direct_url
-        self._client = httpx.Client(
-            timeout=30.0,
-            headers={"Authorization": f"Bearer {token}"},
-        )
-        self._last_fallback_warn = 0.0
-
-    def get(self, method: str, params: dict | None = None) -> dict:
-        """Call a Slack API method with proxy fallback."""
-        _debug_log(f"API: {method} {params or ''}")
-        url = f"{self.base_url}/api/{method}"
-        try:
-            resp = self._client.get(url, params=params)
-            return resp.json()
-        except (httpx.ConnectError, httpx.ConnectTimeout, httpx.ReadTimeout) as exc:
-            if not self.using_proxy:
-                return {"ok": False, "error": str(exc)}
-            self._fallback_warn(str(exc))
-            try:
-                url = f"{self.direct_url}/api/{method}"
-                resp = self._client.get(url, params=params)
-                return resp.json()
-            except Exception as exc2:
-                return {"ok": False, "error": str(exc2)}
-
-    def _fallback_warn(self, reason: str) -> None:
-        """Emit a proxy fallback warning with 10-minute cooldown."""
-        now = time.time()
-        if now - self._last_fallback_warn < FALLBACK_COOLDOWN:
-            return
-        self._last_fallback_warn = now
-        _log(f"WARN: Proxy {self.base_url} unreachable ({reason}), falling back to direct Slack", level=0)
-        FALLBACK_STATE_FILE.parent.mkdir(parents=True, exist_ok=True)
-        FALLBACK_STATE_FILE.write_text(str(int(now)))
-
-    def close(self) -> None:
-        """Close the HTTP client."""
-        self._client.close()
-
-
-# --- Resolution helpers ---
-
-
-def resolve_channel(client: SlackClient, name: str) -> str | None:
-    """Resolve a channel name to an ID, using cache."""
-    if re.match(r"^C[A-Z0-9]+$", name):
-        return name
-    if CHANNEL_CACHE.exists():
-        for line in CHANNEL_CACHE.read_text().splitlines():
-            if "=" in line:
-                cached_id, _, cached_name = line.partition("=")
-                if cached_name.lower() == name.lower():
-                    _debug_log(f"Channel cache hit: {name} → {cached_id}")
-                    return cached_id
-    resp = client.get(
-        "conversations.list",
-        {"types": "public_channel,private_channel", "limit": "200"},
-    )
-    if not resp.get("ok"):
-        return None
-    CHANNEL_CACHE.parent.mkdir(parents=True, exist_ok=True)
-    lines = []
-    found = None
-    for ch in resp.get("channels", []):
-        lines.append(f"{ch['id']}={ch['name']}")
-        if ch["name"].lower() == name.lower():
-            found = ch["id"]
-    CHANNEL_CACHE.write_text("\n".join(lines) + "\n")
-    return found
-
-
-def resolve_user(client: SlackClient, user_id: str) -> str:
-    """Resolve a user ID to display name, using cache."""
-    if not user_id:
-        return "unknown"
-    if USER_CACHE.exists():
-        for line in USER_CACHE.read_text().splitlines():
-            if line.startswith(f"{user_id}="):
-                return line.split("=", 1)[1]
-    resp = client.get("users.info", {"user": user_id})
-    if resp.get("ok"):
-        profile = resp.get("user", {}).get("profile", {})
-        name = profile.get("display_name") or profile.get("real_name") or resp.get("user", {}).get("name", "unknown")
-        USER_CACHE.parent.mkdir(parents=True, exist_ok=True)
-        with USER_CACHE.open("a") as f:
-            f.write(f"{user_id}={name}\n")
-        return name
-    return "unknown"
-
-
-# --- Seen set ---
-
-SEEN_MAX_AGE = 86400  # 24 hours
-
-
-def load_seen() -> dict[str, str | None]:
-    """Load the seen map: {message_ts: thread_ts_or_null}.
-
-    Messages with thread_ts=null are channel-level and stay seen.
-    Thread messages are keyed by their ts with their thread_ts as value.
-    """
-    if not SEEN_FILE.exists():
-        return {}
-    try:
-        data = json.loads(SEEN_FILE.read_text())
-        return data.get("seen", {})
-    except (json.JSONDecodeError, ValueError):
-        return {}
-
-
-def save_seen(seen: dict[str, str | None]) -> None:
-    """Save the seen map, pruning entries older than SEEN_MAX_AGE."""
-    now = time.time()
-    pruned = {ts: thread_ts for ts, thread_ts in seen.items() if now - float(ts) < SEEN_MAX_AGE}
-    SEEN_FILE.parent.mkdir(parents=True, exist_ok=True)
-    SEEN_FILE.write_text(json.dumps({"seen": pruned}))
-
-
-# --- Message filtering ---
-
-
-def _classify_message(text: str, user_id: str, identity: dict, thread_participant: bool) -> str | None:
-    """Determine match type for a message. Returns None if not actionable."""
-    if f"<@{user_id}>" in text:
-        return "direct"
-    if BROADCAST_RE.search(text):
-        return "broadcast"
-    text_lower = text.lower()
-    username = identity.get("USERNAME", "").lower()
-    display_name = identity.get("DISPLAY_NAME", "").lower()
-    real_name = identity.get("REAL_NAME", "").lower()
-    if (username and f"@{username}" in text_lower) or (display_name and f"@{display_name}" in text_lower):
-        return "name"
-    if real_name and real_name != display_name and f"@{real_name}" in text_lower:
-        return "name"
-    if thread_participant:
-        return "thread_participant"
-    return None
-
-
-def filter_messages(
-    messages: list[dict],
-    identity: dict,
-    client: SlackClient | None = None,
-    *,
-    thread_participant: bool = False,
-) -> list[dict]:
-    """Filter messages for actionable ones. Resolves sender names if client provided."""
-    user_id = identity.get("USER_ID", "")
-    results = []
-    for msg in messages:
-        if msg.get("user") == user_id:
-            continue
-        subtype = msg.get("subtype")
-        if subtype and subtype not in ("bot_message", "thread_broadcast"):
-            continue
-        match_type = _classify_message(msg.get("text", ""), user_id, identity, thread_participant)
-        if match_type:
-            sender_id = msg.get("user", "")
-            results.append(
-                {
-                    "ts": msg.get("ts"),
-                    "user": sender_id,
-                    "sender": resolve_user(client, sender_id) if client else sender_id,
-                    "text": msg.get("text", ""),
-                    "match_type": match_type,
-                    "thread_ts": msg.get("thread_ts"),
-                }
-            )
-    results.reverse()
-    return results
-
-
 # --- Thread helpers ---
 
 
-def fetch_thread_context(client: SlackClient, channel_id: str, thread_ts: str) -> list[dict]:
+def _fetch_thread_context(api_get: callable, channel_id: str, thread_ts: str) -> list[dict]:
     """Fetch full thread as simplified context for the agent."""
-    resp = client.get(
-        "conversations.replies",
-        {"channel": channel_id, "ts": thread_ts, "limit": "50"},
-    )
+    resp = api_get("conversations.replies", {"channel": channel_id, "ts": thread_ts, "limit": "50"})
     if not resp.get("ok"):
         return []
     return [
         {
-            "sender": resolve_user(client, msg.get("user", "")),
+            "sender": resolve_user(api_get, msg.get("user", "")),
             "text": msg.get("text", ""),
             "ts": msg.get("ts", ""),
         }
@@ -370,7 +137,7 @@ def _find_active_threads(thread_messages: list[dict], user_id: str, *, participa
 
 
 def _scan_threads(
-    client: SlackClient,
+    api_get: callable,
     channel_id: str,
     channel_name: str,
     parents: list[dict],
@@ -380,28 +147,19 @@ def _scan_threads(
     participating: bool,
 ) -> list[dict]:
     """Scan threads for actionable messages and enrich with context."""
+    resolve_fn = partial(resolve_user, api_get)
     results: list[dict] = []
     for parent in parents:
         parent_ts = parent["ts"]
-        replies_resp = client.get(
-            "conversations.replies",
-            {"channel": channel_id, "ts": parent_ts},
-        )
+        replies_resp = api_get("conversations.replies", {"channel": channel_id, "ts": parent_ts})
         reply_msgs = replies_resp.get("messages", []) if replies_resp.get("ok") else []
-        # Skip thread parent and thread_broadcast
         reply_msgs = [m for m in reply_msgs if m.get("subtype") != "thread_broadcast" and m.get("ts") != parent_ts]
-        matches = filter_messages(
-            reply_msgs,
-            identity,
-            client,
-            thread_participant=participating,
-        )
-        # Strip already-seen
+        matches = filter_messages(reply_msgs, identity, resolve_fn, thread_participant=participating)
         matches = [m for m in matches if m["ts"] not in seen]
         if not participating and not matches:
             continue
         if matches:
-            thread_ctx = fetch_thread_context(client, channel_id, parent_ts)
+            thread_ctx = _fetch_thread_context(api_get, channel_id, parent_ts)
             for msg in matches:
                 msg["channel"] = channel_name
                 msg["channel_id"] = channel_id
@@ -415,23 +173,23 @@ def _scan_threads(
 # --- Poll cycle ---
 
 
-def _poll_channel(client: SlackClient, channel_name: str, identity: dict, seen: dict[str, str | None]) -> list[dict]:
+def _poll_channel(api_get: callable, channel_name: str, identity: dict, seen: dict[str, str | None]) -> list[dict]:
     """Poll a single channel for actionable messages, skipping already-seen ones."""
-    channel_id = resolve_channel(client, channel_name)
+    channel_id = resolve_channel(api_get, channel_name)
     if not channel_id:
         _log(f"ERROR: Could not resolve channel '{channel_name}'", level=0)
         return []
 
     _debug_log(f"Polling #{channel_name} ({channel_id})")
     user_id = identity.get("USER_ID", "")
+    resolve_fn = partial(resolve_user, api_get)
 
     # Fetch recent channel history
-    history = client.get("conversations.history", {"channel": channel_id, "limit": str(HISTORY_LIMIT)})
+    history = api_get("conversations.history", {"channel": channel_id, "limit": str(HISTORY_LIMIT)})
     messages = history.get("messages", []) if history.get("ok") else []
     _debug_log(f"Channel messages: {len(messages)}")
 
-    # Catchup: if seen is empty (first run / long offline), pre-seed with all
-    # but the last CATCHUP_ACTIONABLE_LIMIT messages so we don't respond to stale @mentions
+    # Catchup: if seen is empty (first run / long offline), seed all but last N
     if not seen and messages:
         _log("First run catchup: seeding seen set from channel history", level=0)
         for msg in messages[CATCHUP_ACTIONABLE_LIMIT:]:
@@ -439,7 +197,7 @@ def _poll_channel(client: SlackClient, channel_name: str, identity: dict, seen: 
 
     # Filter and strip seen
     actionable: list[dict] = []
-    channel_matches = filter_messages(messages, identity, client)
+    channel_matches = filter_messages(messages, identity, resolve_fn)
     channel_matches = [m for m in channel_matches if m["ts"] not in seen]
     for msg in channel_matches:
         msg["channel"] = channel_name
@@ -447,25 +205,23 @@ def _poll_channel(client: SlackClient, channel_name: str, identity: dict, seen: 
     actionable.extend(channel_matches)
     _debug_log(f"Channel matches (unseen): {len(channel_matches)}")
 
-    # Thread scanning — fetch wider history for thread discovery
+    # Thread scanning
     if len(messages) < THREAD_HISTORY_LIMIT:
-        thread_resp = client.get("conversations.history", {"channel": channel_id, "limit": str(THREAD_HISTORY_LIMIT)})
+        thread_resp = api_get("conversations.history", {"channel": channel_id, "limit": str(THREAD_HISTORY_LIMIT)})
         thread_messages = thread_resp.get("messages", []) if thread_resp.get("ok") else []
     else:
         thread_messages = messages
 
-    # Participating threads
     participating = _find_active_threads(thread_messages, user_id, participating=True)
     _debug_log(f"Participating threads: {len(participating)}")
     actionable.extend(
-        _scan_threads(client, channel_id, channel_name, participating, identity, seen, participating=True)
+        _scan_threads(api_get, channel_id, channel_name, participating, identity, seen, participating=True)
     )
 
-    # Non-participating threads with @mentions
     non_participating = _find_active_threads(thread_messages, user_id, participating=False)
     _debug_log(f"Non-participating threads: {len(non_participating)}")
     actionable.extend(
-        _scan_threads(client, channel_id, channel_name, non_participating, identity, seen, participating=False)
+        _scan_threads(api_get, channel_id, channel_name, non_participating, identity, seen, participating=False)
     )
 
     return actionable
@@ -484,7 +240,7 @@ def poll_cycle(
     for channel in channels:
         stripped = channel.strip()
         if stripped:
-            all_actionable.extend(_poll_channel(client, stripped, identity, seen))
+            all_actionable.extend(_poll_channel(client.get, stripped, identity, seen))
 
     # Mark all output messages as seen
     for msg in all_actionable:
@@ -515,7 +271,7 @@ def read_pid() -> int | None:
         return None
     try:
         pid = int(PID_FILE.read_text().strip())
-        os.kill(pid, 0)  # Check if process exists
+        os.kill(pid, 0)
         return pid
     except (ValueError, ProcessLookupError, PermissionError):
         PID_FILE.unlink(missing_ok=True)
@@ -530,6 +286,13 @@ def write_pid() -> None:
 
 
 # --- Commands ---
+
+
+def _apply_globals(verbose: int, debug: bool) -> None:
+    """Set global verbosity and debug flags."""
+    global _verbose, _debug  # noqa: PLW0603
+    _verbose = verbose
+    _debug = debug
 
 
 @app.command()
@@ -555,13 +318,6 @@ def status() -> None:
         typer.echo(f"running (PID {pid})")
     else:
         typer.echo("stopped")
-
-
-def _apply_globals(verbose: int, debug: bool) -> None:
-    """Set global verbosity and debug flags."""
-    global _verbose, _debug  # noqa: PLW0603
-    _verbose = verbose
-    _debug = debug
 
 
 @app.command()
@@ -605,10 +361,7 @@ def _run_daemon(*, once: bool = False, dry_run: bool = False, interval_override:
     """Core daemon loop."""
     existing_pid = read_pid()
     if existing_pid:
-        typer.echo(
-            f"ERROR: Daemon already running (PID {existing_pid}). Use 'stop' first.",
-            err=True,
-        )
+        typer.echo(f"ERROR: Daemon already running (PID {existing_pid}). Use 'stop' first.", err=True)
         raise typer.Exit(code=1)
 
     write_pid()
