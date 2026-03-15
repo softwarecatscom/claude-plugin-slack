@@ -62,12 +62,12 @@ Before reporting success, complete all of these checks:
    ```
    The new version directory should be present.
 
-2. **Test poll** — run a single poller cycle via `ctx_execute` to verify the scripts work:
+2. **Test poll** — verify the poller runs without errors:
    ```bash
    source ~/.claude/slack.conf
-   "${SCRIPTS_DIR}/slack-poll" --once
+   "${SCRIPTS_DIR}/slack-poll" once --dry-run
    ```
-   Verify it runs without errors. If there are actionable messages, output will contain channel headers (`# channel=...`) and JSON arrays.
+   Dry run skips heartbeat and mention tracker. Verify it completes without errors.
 
 3. **SCRIPTS_DIR** — confirm `slack.conf` points to the new version:
    ```bash

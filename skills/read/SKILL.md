@@ -24,7 +24,7 @@ The poller outputs a JSON array of enriched messages. Each message has:
 
 Sender names are pre-resolved. Mention tracking for thread replies is auto-cleared.
 
-If invoked manually (not from poller): `"${SCRIPTS_DIR}/slack-poll" once`
+If invoked manually (not from poller): `"${SCRIPTS_DIR}/slack-poll" once --dry-run`
 
 ## Agent Algorithm
 
