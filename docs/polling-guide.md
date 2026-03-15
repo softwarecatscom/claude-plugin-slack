@@ -13,7 +13,7 @@ This creates a 1-minute cron that manages the poll daemon automatically.
 ## How It Works
 
 ```
-/loop 1m cron fires
+/loop 3m cron fires
     → daemon-loop skill checks: is daemon running?
     → if stopped: launch via Bash(run_in_background: true)
     → if running: do nothing (zero cost)
