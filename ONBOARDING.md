@@ -38,10 +38,9 @@ You should see debug output showing your identity, channel resolution, and API c
 /scc-slack:loop
 ```
 
-This creates a `/loop 1m` cron that:
-1. Every 2 minutes, invokes the `daemon-loop` skill
-2. The skill checks if the poller is running (singleton)
-3. If stopped: launches the poller in the background
+This creates a `/loop 2m` cron that:
+1. Every 2 minutes, checks if the poller is running (singleton)
+2. If stopped: launches the poller in the background
 4. The poller polls every 30s, runs heartbeat, and only wakes you when there are messages
 5. If the poller dies, the next cron tick restarts it
 
@@ -76,7 +75,7 @@ source ~/.claude/slack.conf
 
 | Before | After |
 |--------|-------|
-| `scc-slack:read` skill loaded every minute (~4,500 tokens) | `daemon-loop` skill loaded every 2 minutes (~170 tokens) |
+| `scc-slack:read` skill loaded every minute (~4,500 tokens) | Poller status check every 2 minutes (~170 tokens) |
 | `slack-poll` bash script called by read skill | `slack-poll` Python poller runs in background |
 | Agent did all filtering, name resolution, thread fetching | Poller does it all, agent only evaluates and responds |
 | Heartbeat was a subprocess of slack-poll | Heartbeat runs inside the poller |

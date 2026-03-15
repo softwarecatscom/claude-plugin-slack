@@ -145,8 +145,8 @@ if __name__ == "__main__":
 The slack poller (`scripts/slack-poll.py`) is the **only** mechanism for agents to receive Slack events. There is no cron-based `slack-poll` alternative.
 
 ### How it works
-1. `/loop 2m` cron fires → invokes `daemon-loop` skill
-2. Skill checks poller status (singleton via PID file) → launches if stopped via `Bash(run_in_background: true)`
+1. `/loop 2m` cron fires → checks if poller is running (singleton via PID file)
+2. If stopped → launches poller via `Bash(run_in_background: true)`
 3. Poller polls Slack every 30s internally — zero token cost while idle
 4. When actionable messages found: outputs enriched JSON and exits
 5. Agent processes messages via `read` skill → next cron tick re-launches poller
