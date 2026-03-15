@@ -1,6 +1,6 @@
 ---
 name: read
-description: Process Slack messages from the poller. Use when the poller-loop skill wakes you with actionable messages, or when the user says "check slack", "read slack".
+description: Process Slack messages from the poller. Use when the poller wakes you with actionable messages, or when the user says "check slack", "read slack".
 ---
 
 # Read Slack Messages
@@ -21,37 +21,40 @@ The poller outputs a JSON array of enriched messages. Each message has:
 - `text`, `ts` — message content and timestamp
 - `match_type` — `direct`/`broadcast`/`name`/`thread_participant`
 - `thread_ts` — set if this is a thread reply
-- `thread_context` — full thread history (array of `{sender, text, ts}`) if thread reply
 
-Sender names are pre-resolved. Thread context is pre-fetched. Mention tracking for thread replies is auto-cleared. The agent only needs to evaluate and respond.
+Sender names are pre-resolved. Mention tracking for thread replies is auto-cleared.
 
-If invoked manually (not from poller): `"${SCRIPTS_DIR}/slack-poll" --once`
+If invoked manually (not from poller): `"${SCRIPTS_DIR}/slack-poll" once`
 
-## Process each message
+## Agent Algorithm
 
-For each message chronologically:
+1. **Read** (not cat) the poller output
+2. **Scan the actionables** — check for conversation closure, classify, don't skip blindly
+3. **Exclude conversation closures** — build the actionable list and note the count
+4. **For each actionable message do the following:**
+   i. **Evaluate** what's needed (task, question, greeting, broadcast relevance)
+   ii. **Decide** whether to respond (direct: always. broadcast: judgment with reasoning. thread participant: if conversation needs your input)
+   iii. **Do the work** (quick: respond with answer. real: eyes → do it → report with checkmark. blocked: acknowledge → ask what you need. deferred: acknowledge → Linear issue → mention ID)
+   iv. **Respond appropriately** — start a new thread on channel messages, reply in existing threads, or @mention in the channel when the response is relevant to everyone
+   v. **Track @mentions** to agents in your response
+   vi. **Honor commitments** — if your reply promises action, execute now or TaskCreate
+   vii. **Scan** your response for commitments you missed in step vi
+   viii. **Move** to next message
+5. **Cross check** the number of actionables from step 3 with the number of responses you made and use the counters to make sure you do not forget to respond to some messages
 
-1. **Skip closures.** "Got it", "Thanks", emoji-only, sign-offs — don't respond unless there's a new request embedded.
+## Response commands
 
-2. **Decide.** Direct mentions: always respond. Broadcasts: respond if relevant to your capabilities or asks all agents to act; note reasoning if you stay silent. Thread participant: respond if needed.
+Start a new thread on a channel message:
+```bash
+"${SCRIPTS_DIR}/slack-send" --thread "${TS}" "${CHANNEL_ID}" "@SenderName response"
+```
 
-3. **Do the work.** Default to action.
-   - Quick tasks: respond with the answer.
-   - Real work: react `eyes`, do it now, report with `white_check_mark`.
-   - Blocked: acknowledge, state what you need.
-   - Deferred: acknowledge, create Linear issue, mention ID in reply.
+Reply in an existing thread:
+```bash
+"${SCRIPTS_DIR}/slack-send" --thread "${THREAD_TS}" "${CHANNEL_ID}" "@SenderName response"
+```
 
-4. **Respond.** Always reply in a thread. For channel messages (`thread_ts` is null), use the message's own `ts` as the thread — this starts a new thread on that message:
-   ```bash
-   "${SCRIPTS_DIR}/slack-send" --thread "${TS}" "${CHANNEL_ID}" "@SenderName response"
-   ```
-   For thread messages (`thread_ts` is set), reply in the existing thread:
-   ```bash
-   "${SCRIPTS_DIR}/slack-send" --thread "${THREAD_TS}" "${CHANNEL_ID}" "@SenderName response"
-   ```
-   If you @mention another agent in a thread, track it:
-   ```bash
-   "${SCRIPTS_DIR}/slack-mention-tracker" add "${CHANNEL_ID}" "${THREAD_TS}" "${USER_ID}"
-   ```
-
-5. **Honor commitments.** If your reply promises action, execute now or `TaskCreate` to track it.
+Track an @mention to another agent:
+```bash
+"${SCRIPTS_DIR}/slack-mention-tracker" add "${CHANNEL_ID}" "${THREAD_TS}" "${USER_ID}"
+```
