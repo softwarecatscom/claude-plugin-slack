@@ -41,9 +41,12 @@ For each message chronologically:
    - Blocked: acknowledge, state what you need.
    - Deferred: acknowledge, create Linear issue, mention ID in reply.
 
-4. **Respond in same context.**
+4. **Respond.** Always reply in a thread. For channel messages (`thread_ts` is null), use the message's own `ts` as the thread — this starts a new thread on that message:
    ```bash
-   "${SCRIPTS_DIR}/slack-send" "${CHANNEL_ID}" "@SenderName response"
+   "${SCRIPTS_DIR}/slack-send" --thread "${TS}" "${CHANNEL_ID}" "@SenderName response"
+   ```
+   For thread messages (`thread_ts` is set), reply in the existing thread:
+   ```bash
    "${SCRIPTS_DIR}/slack-send" --thread "${THREAD_TS}" "${CHANNEL_ID}" "@SenderName response"
    ```
    If you @mention another agent in a thread, track it:
