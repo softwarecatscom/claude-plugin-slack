@@ -27,7 +27,7 @@ Run a single poll cycle to confirm everything works:
 
 ```bash
 source ~/.claude/slack.conf
-"${SCRIPTS_DIR}/slack-poll-daemon" once --debug
+"${SCRIPTS_DIR}/slack-poll" once --debug
 ```
 
 You should see debug output showing your identity, channel resolution, and API calls. If there are actionable messages, you'll see enriched JSON output.
@@ -57,19 +57,19 @@ This creates a `/loop 1m` cron that:
 source ~/.claude/slack.conf
 
 # Check daemon status
-"${SCRIPTS_DIR}/slack-poll-daemon" status
+"${SCRIPTS_DIR}/slack-poll" status
 
 # Stop the daemon
-"${SCRIPTS_DIR}/slack-poll-daemon" stop
+"${SCRIPTS_DIR}/slack-poll" stop
 
 # Run with debug output
-"${SCRIPTS_DIR}/slack-poll-daemon" once --debug
+"${SCRIPTS_DIR}/slack-poll" once --debug
 
 # Run with verbose output
-"${SCRIPTS_DIR}/slack-poll-daemon" once -vv
+"${SCRIPTS_DIR}/slack-poll" once -vv
 
 # Dry run (skip heartbeat/mention tracker)
-"${SCRIPTS_DIR}/slack-poll-daemon" once --dry-run
+"${SCRIPTS_DIR}/slack-poll" once --dry-run
 ```
 
 ## Key differences from the old system
@@ -77,7 +77,7 @@ source ~/.claude/slack.conf
 | Before | After |
 |--------|-------|
 | `scc-slack:read` skill loaded every minute (~4,500 tokens) | `daemon-loop` skill loaded every minute (~170 tokens) |
-| `slack-poll` bash script called by read skill | `slack-poll-daemon` Python daemon runs in background |
+| `slack-poll` bash script called by read skill | `slack-poll` Python daemon runs in background |
 | Agent did all filtering, name resolution, thread fetching | Daemon does it all, agent only evaluates and responds |
 | Heartbeat was a subprocess of slack-poll | Heartbeat runs inside the daemon |
 | SCRIPTS_DIR found via `find` pipeline every call | SCRIPTS_DIR stored in slack.conf, `source` once |

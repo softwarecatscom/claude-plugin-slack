@@ -65,7 +65,7 @@ Before reporting success, complete all of these checks:
 2. **Test poll** — run a single daemon cycle via `ctx_execute` to verify the scripts work:
    ```bash
    source ~/.claude/slack.conf
-   "${SCRIPTS_DIR}/slack-poll-daemon" --once
+   "${SCRIPTS_DIR}/slack-poll" --once
    ```
    Verify it runs without errors. If there are actionable messages, output will contain channel headers (`# channel=...`) and JSON arrays.
 

@@ -44,7 +44,7 @@ THREAD_CURSOR_FILE = Path.home() / ".claude" / "slack-thread-cursors.conf"
 CHANNEL_CACHE = Path.home() / ".claude" / "slack-cache" / "channels"
 USER_CACHE = Path.home() / ".claude" / "slack-cache" / "users"
 MENTION_TRACKER_STATE = Path.home() / ".claude" / "slack-mention-tracker.json"
-PID_FILE = Path.home() / ".claude" / "slack-poll-daemon.pid"
+PID_FILE = Path.home() / ".claude" / "slack-poll.pid"
 FALLBACK_STATE_FILE = Path.home() / ".claude" / "slack-proxy-fallback-alerted"
 
 # --- Constants ---
@@ -72,7 +72,7 @@ POLL_OPTIONS = {
 # --- App ---
 
 app = typer.Typer(
-    name="slack-poll-daemon",
+    name="slack-poll",
     help="Long-poll daemon for Slack monitoring.",
     add_completion=False,
 )
@@ -437,7 +437,8 @@ def _scan_threads(
             {"channel": channel_id, "ts": parent_ts, "oldest": effective_cursor or "0"},
         )
         reply_msgs = replies_resp.get("messages", []) if replies_resp.get("ok") else []
-        reply_msgs = [m for m in reply_msgs if m.get("subtype") != "thread_broadcast"]
+        # Skip thread parent (already processed as channel message) and thread_broadcast
+        reply_msgs = [m for m in reply_msgs if m.get("subtype") != "thread_broadcast" and m.get("ts") != parent_ts]
         matches = filter_messages(
             reply_msgs,
             identity,

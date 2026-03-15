@@ -12,14 +12,14 @@ source ~/.claude/slack.conf
 ## Check daemon
 
 ```bash
-"${SCRIPTS_DIR}/slack-poll-daemon" --status
+"${SCRIPTS_DIR}/slack-poll" --status
 ```
 
 - **"running"**: Stop. Say nothing.
 - **"stopped"**: Launch it:
 
 ```bash
-Bash(command: "${SCRIPTS_DIR}/slack-poll-daemon", description: "slack poll daemon", run_in_background: true)
+Bash(command: "${SCRIPTS_DIR}/slack-poll", description: "slack poll daemon", run_in_background: true)
 ```
 
 ## When the background task completes

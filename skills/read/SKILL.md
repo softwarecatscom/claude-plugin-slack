@@ -25,7 +25,7 @@ The daemon outputs a JSON array of enriched messages. Each message has:
 
 Sender names are pre-resolved. Thread context is pre-fetched. Mention tracking for thread replies is auto-cleared. The agent only needs to evaluate and respond.
 
-If invoked manually (not from daemon): `"${SCRIPTS_DIR}/slack-poll-daemon" --once`
+If invoked manually (not from daemon): `"${SCRIPTS_DIR}/slack-poll" --once`
 
 ## Process each message
 

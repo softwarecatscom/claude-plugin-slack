@@ -12,7 +12,7 @@ Stop the recurring Slack polling loop and the poll daemon.
 1. **Stop the daemon:**
    ```bash
    source ~/.claude/slack.conf
-   "${SCRIPTS_DIR}/slack-poll-daemon" --stop
+   "${SCRIPTS_DIR}/slack-poll" --stop
    ```
 
 2. **Stop the cron:** List active cron jobs using CronList to find the Slack polling job, then delete it with CronDelete using the job ID.

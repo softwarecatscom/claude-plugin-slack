@@ -44,7 +44,7 @@ def run(
 ## Scripts
 
 ### Naming
-- All scripts follow the `slack-<action>` pattern (e.g. `slack-send`, `slack-poll-daemon`, `slack-heartbeat`)
+- All scripts follow the `slack-<action>` pattern (e.g. `slack-send`, `slack-poll`, `slack-heartbeat`)
 - Scripts are executable and live in `scripts/`
 
 ### Language Choice
@@ -142,7 +142,7 @@ if __name__ == "__main__":
 
 ## Daemon Architecture
 
-The poll daemon (`scripts/slack-poll-daemon.py`) is the **only** mechanism for agents to receive Slack events. There is no cron-based `slack-poll` alternative.
+The poll daemon (`scripts/slack-poll.py`) is the **only** mechanism for agents to receive Slack events. There is no cron-based `slack-poll` alternative.
 
 ### How it works
 1. `/loop 1m` cron fires → invokes `daemon-loop` skill
@@ -216,7 +216,7 @@ All skills use `source ~/.claude/slack.conf` for SCRIPTS_DIR and channel config.
 
 ### Update Verification (AGT-22)
 1. Verify scripts exist on disk at new version path
-2. Test poll with new version (`slack-poll-daemon --once` — verify no errors)
+2. Test poll with new version (`slack-poll --once` — verify no errors)
 3. Confirm SCRIPTS_DIR in `~/.claude/slack.conf` points to new version
 4. Only then report update as complete
 
