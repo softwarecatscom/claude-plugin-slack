@@ -95,11 +95,23 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 from slack_cli_options import COMMON_OPTIONS
 ```
 
+Script-specific options go in a local `SCRIPT_OPTIONS` dict (e.g. `POLL_OPTIONS`, `HEARTBEAT_OPTIONS`) to avoid repeating `typer.Option(...)` across multiple commands:
+
+```python
+POLL_OPTIONS = {
+    "interval": typer.Option(None, "--interval", "-i", help="Poll interval in seconds"),
+}
+```
+
 Example structure:
 
 ```python
 import typer
 from slack_cli_options import COMMON_OPTIONS
+
+EXAMPLE_OPTIONS = {
+    "limit": typer.Option(10, "--limit", "-n", help="Max items"),
+}
 
 app = typer.Typer(name="slack-example", add_completion=False)
 
@@ -108,6 +120,7 @@ def run(
     verbose: int = COMMON_OPTIONS["verbose"],
     debug: bool = COMMON_OPTIONS["debug"],
     dry_run: bool = COMMON_OPTIONS["dry_run"],
+    limit: int = EXAMPLE_OPTIONS["limit"],
 ) -> None:
     """Run the thing."""
 

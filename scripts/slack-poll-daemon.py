@@ -63,6 +63,12 @@ BROADCAST_RE = re.compile(
     r"|(^|\s)@everyone(\s|$)",
 )
 
+# --- Daemon Options ---
+
+POLL_OPTIONS = {
+    "interval": typer.Option(None, "--interval", "-i", help="Poll interval in seconds"),
+}
+
 # --- App ---
 
 app = typer.Typer(
@@ -653,7 +659,7 @@ def run(
     verbose: int = COMMON_OPTIONS["verbose"],
     debug: bool = COMMON_OPTIONS["debug"],
     dry_run: bool = COMMON_OPTIONS["dry_run"],
-    interval: Optional[int] = typer.Option(None, "--interval", "-i", help="Poll interval in seconds"),  # noqa: UP045
+    interval: Optional[int] = POLL_OPTIONS["interval"],  # noqa: UP045
 ) -> None:
     """Run daemon until actionable messages found (default command)."""
     _apply_globals(verbose, debug)
@@ -666,7 +672,7 @@ def main(
     verbose: int = COMMON_OPTIONS["verbose"],
     debug: bool = COMMON_OPTIONS["debug"],
     dry_run: bool = COMMON_OPTIONS["dry_run"],
-    interval: Optional[int] = typer.Option(None, "--interval", "-i", help="Poll interval in seconds"),  # noqa: UP045
+    interval: Optional[int] = POLL_OPTIONS["interval"],  # noqa: UP045
 ) -> None:
     """Long-poll daemon for Slack monitoring."""
     _apply_globals(verbose, debug)
