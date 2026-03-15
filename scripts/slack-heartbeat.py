@@ -1,190 +1,139 @@
 #!/usr/bin/env python3
-"""Update this agent's heartbeat in the pinned Agent Status Check thread,
-then check all peers for staleness (2+ digits behind) and outdated versions.
+# /// script
+# requires-python = ">=3.11"
+# dependencies = ["httpx", "typer"]
+# ///
+"""Update this agent's heartbeat in the pinned Agent Status Check thread.
 
-Usage: slack-heartbeat [--maintenance [DURATION]] [CHANNEL_ID]
-  CHANNEL_ID  — channel containing the pinned status thread (default: from slack.conf)
-  --maintenance [DURATION] — signal maintenance mode in heartbeat status.
-      Appends '| Maintenance <ISO time> [for DURATION]' to the status line.
-      DURATION is optional: e.g. 2h, 30m, 1d, 90s.
-      Peers in maintenance are skipped by the watchdog staleness check.
+Then check all peers for staleness (2+ digits behind) and outdated versions.
 
 Config: ~/.claude/slack-heartbeat.conf (auto-created on first run)
-  HEARTBEAT_THREAD_TS — ts of the pinned "Agent Status Check" parent message
-  HEARTBEAT_MSG_TS    — ts of this agent's reply in that thread
+  HEARTBEAT_THREAD_TS -- ts of the pinned "Agent Status Check" parent message
+  HEARTBEAT_MSG_TS    -- ts of this agent's reply in that thread
 
 The heartbeat digit is calculated from the current minute: (minute // 6) + 1
 Format: :<digit_name>: v<scc-slack-version> [| Maintenance <ISO> [for <duration>]]
 """
 
-import json
-import os
+from __future__ import annotations
+
 import re
 import subprocess
 import sys
-import time
-import urllib.error
-import urllib.request
-from datetime import datetime
+from datetime import datetime, timezone
 from pathlib import Path
+from typing import Optional
 
-SLACK_BASE = os.environ.get("SLACK_PROXY_URL") or "https://slack.com"
-SLACK_DIRECT = "https://slack.com"
-FALLBACK_STATE_FILE = Path.home() / ".claude" / "slack-proxy-fallback-alerted"
+import typer
+
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+from scc_slack import SlackClient, load_config, load_identity, load_token, resolve_channel, resolve_user
+from scc_slack.config import _parse_key_value_file
+from slack_cli_options import COMMON_OPTIONS
+
+# --- Constants ---
+
+STALENESS_THRESHOLD = 5
+DEDUP_COOLDOWN_SECONDS = 600
+DEDUP_HISTORY_LIMIT = "30"
+THREAD_REPLY_LIMIT = "50"
+PATCH_BEHIND_THRESHOLD = 2
 
 DIGIT_NAMES = {
-    1: "one", 2: "two", 3: "three", 4: "four", 5: "five",
-    6: "six", 7: "seven", 8: "eight", 9: "nine", 10: "keycap_ten",
+    1: "one",
+    2: "two",
+    3: "three",
+    4: "four",
+    5: "five",
+    6: "six",
+    7: "seven",
+    8: "eight",
+    9: "nine",
+    10: "keycap_ten",
 }
 NAME_TO_DIGIT = {v: k for k, v in DIGIT_NAMES.items()}
 
 SCRIPT_DIR = Path(__file__).resolve().parent
-HOME = Path.home()
-CONFIG_FILE = HOME / ".claude" / "slack-heartbeat.conf"
-SLACK_CONF = HOME / ".claude" / "slack.conf"
-IDENTITY_FILE = HOME / ".claude" / "slack-cache" / "identity"
+CONFIG_FILE = Path.home() / ".claude" / "slack-heartbeat.conf"
+
+# --- App ---
+
+app = typer.Typer(
+    name="slack-heartbeat",
+    help="Update agent heartbeat in Slack status thread.",
+    add_completion=False,
+)
+
+# --- Logging ---
+
+_verbose = 0
+_debug = False
 
 
-def _build_request(base: str, method: str, token: str, params: dict | None = None, post_data: dict | None = None) -> urllib.request.Request:
-    """Build a urllib Request for a Slack API call."""
-    if post_data is not None:
-        data = json.dumps(post_data).encode()
-        return urllib.request.Request(
-            f"{base}/api/{method}",
-            data=data,
-            headers={
-                "Authorization": f"Bearer {token}",
-                "Content-type": "application/json; charset=utf-8",
-            },
-        )
-    qs = "&".join(f"{k}={v}" for k, v in (params or {}).items())
-    url = f"{base}/api/{method}?{qs}" if qs else f"{base}/api/{method}"
-    return urllib.request.Request(url, headers={"Authorization": f"Bearer {token}"})
+def _log(msg: str, level: int = 1) -> None:
+    """Print to stderr if verbosity >= level."""
+    if _verbose >= level:
+        typer.echo(msg, err=True)
 
 
-def _fallback_warn(error: Exception) -> None:
-    """Emit a one-time fallback warning (10-min cooldown)."""
-    now = int(time.time())
-    last_alert = 0
-    if FALLBACK_STATE_FILE.exists():
-        try:
-            last_alert = int(FALLBACK_STATE_FILE.read_text().strip())
-        except (ValueError, OSError):
-            pass
-    if now - last_alert >= 600:
-        print(f"WARN: Proxy {SLACK_BASE} unreachable ({error}), falling back to direct Slack", file=sys.stderr)
-        FALLBACK_STATE_FILE.parent.mkdir(parents=True, exist_ok=True)
-        FALLBACK_STATE_FILE.write_text(str(now))
+def _debug_log(msg: str) -> None:
+    """Print to stderr if --debug enabled."""
+    if _debug:
+        typer.echo(f"DEBUG: {msg}", err=True)
 
 
-def slack_api(method: str, token: str, params: dict | None = None, post_data: dict | None = None) -> dict:
-    """Call a Slack API method with proxy fallback. GET if params only, POST if post_data."""
-    req = _build_request(SLACK_BASE, method, token, params, post_data)
-    try:
-        with urllib.request.urlopen(req) as resp:
-            return json.loads(resp.read())
-    except (urllib.error.URLError, ConnectionError, TimeoutError) as e:
-        # Only retry if using proxy
-        if SLACK_BASE == SLACK_DIRECT:
-            raise
-        _fallback_warn(e)
-        req = _build_request(SLACK_DIRECT, method, token, params, post_data)
-        with urllib.request.urlopen(req) as resp:
-            return json.loads(resp.read())
+def _apply_globals(verbose: int, debug: bool) -> None:
+    global _verbose, _debug  # noqa: PLW0603
+    _verbose = verbose
+    _debug = debug
 
 
-def load_token() -> str:
-    """Load Slack token from the same location as other scripts."""
-    try:
-        slack_bin = subprocess.run(["which", "slack"], capture_output=True, text=True, check=True).stdout.strip()
-        token_path = Path(slack_bin).parent / ".slack"
-        return token_path.read_text().strip()
-    except Exception:
-        sys.exit("ERROR: No Slack token found.")
-
-
-def load_identity(token: str) -> str:
-    """Load or create cached identity, return USER_ID."""
-    if not IDENTITY_FILE.exists():
-        subprocess.run([str(SCRIPT_DIR / "slack-identity")], capture_output=True)
-    if not IDENTITY_FILE.exists():
-        sys.exit("ERROR: Could not establish identity.")
-    for line in IDENTITY_FILE.read_text().splitlines():
-        if line.startswith("USER_ID="):
-            return line.split("=", 1)[1].strip('"')
-    sys.exit("ERROR: USER_ID not found in identity file.")
+# --- Config helpers (heartbeat-specific) ---
 
 
 def load_conf(path: Path) -> dict:
-    """Load a key=value config file into a dict."""
-    conf = {}
-    if path.exists():
-        for line in path.read_text().splitlines():
-            line = line.strip()
-            if "=" in line and not line.startswith("#"):
-                k, v = line.split("=", 1)
-                conf[k.strip()] = v.strip().strip('"')
-    return conf
+    """Load heartbeat-specific key=value config file."""
+    return _parse_key_value_file(path)
 
 
-def save_conf(path: Path, data: dict):
+def save_conf(path: Path, data: dict) -> None:
     """Save a dict as key=value config file."""
     path.parent.mkdir(parents=True, exist_ok=True)
     lines = [f'{k}="{v}"' for k, v in data.items()]
     path.write_text("\n".join(lines) + "\n")
 
 
-def resolve_channel(channel: str, token: str) -> str:
-    """Resolve channel name to ID if needed."""
-    if re.match(r"^C[A-Z0-9]+$", channel):
-        return channel
-    try:
-        result = subprocess.run(
-            [str(SCRIPT_DIR / "slack-resolve"), "--channel", channel],
-            capture_output=True, text=True,
-        )
-        resolved = result.stdout.strip().split("\n")[0].split("=")[0]
-        if resolved and resolved != "UNKNOWN":
-            return resolved
-    except Exception:
-        pass
-    sys.exit(f"ERROR: Could not resolve channel '{channel}'")
-
-
-def resolve_user(uid: str) -> str:
-    """Resolve a user ID to display name."""
-    try:
-        result = subprocess.run(
-            [str(SCRIPT_DIR / "slack-resolve"), uid],
-            capture_output=True, text=True,
-        )
-        line = result.stdout.strip().split("\n")[0]
-        if "=" in line:
-            name = line.split("=", 1)[1]
-            if name and name != "UNKNOWN":
-                return name
-    except Exception:
-        pass
-    return uid
+# --- Heartbeat logic ---
 
 
 def detect_version() -> str:
-    """Detect scc-slack version from the script path."""
+    """Detect scc-slack version from script path or plugin.json."""
     match = re.search(r"(\d+\.\d+\.\d+)", str(SCRIPT_DIR))
-    return match.group(1) if match else "unknown"
+    if match:
+        return match.group(1)
+    # Fallback: read from plugin.json (when running from repo)
+    plugin_json = SCRIPT_DIR.parent / ".claude-plugin" / "plugin.json"
+    if plugin_json.exists():
+        import json
+
+        data = json.loads(plugin_json.read_text())
+        if "version" in data:
+            return data["version"]
+    return "unknown"
 
 
 def calculate_heartbeat(maintenance: bool = False, duration: str | None = None) -> tuple[int, str, str]:
     """Calculate heartbeat digit, emoji, and full text.
+
     If maintenance is True, appends '| Maintenance <ISO> [for <duration>]'.
     """
-    minute = datetime.now().minute
+    minute = datetime.now(tz=timezone.utc).minute
     digit = (minute // 6) + 1
     emoji = f":{DIGIT_NAMES[digit]}:"
     version = detect_version()
     text = f"{emoji} v{version}"
     if maintenance:
-        iso_time = datetime.now().strftime("%Y-%m-%dT%H:%M")
+        iso_time = datetime.now(tz=timezone.utc).strftime("%Y-%m-%dT%H:%M")
         text += f" | Maintenance {iso_time}"
         if duration:
             text += f" for {duration}"
@@ -214,6 +163,7 @@ def parse_version(text: str) -> tuple[int, int, int] | None:
 
 def check_version_behind(own: tuple[int, int, int], peer: tuple[int, int, int]) -> str | None:
     """Check if peer version is behind own version.
+
     Returns description string if behind, None if ok.
     Flags: major/minor delta >= 1, patch delta >= 2.
     """
@@ -221,14 +171,14 @@ def check_version_behind(own: tuple[int, int, int], peer: tuple[int, int, int]) 
         return f"v{peer[0]}.{peer[1]}.{peer[2]} (major {own[0] - peer[0]} behind)"
     if peer[0] == own[0] and peer[1] < own[1]:
         return f"v{peer[0]}.{peer[1]}.{peer[2]} (minor {own[1] - peer[1]} behind)"
-    if peer[0] == own[0] and peer[1] == own[1] and (own[2] - peer[2]) >= 2:
+    if peer[0] == own[0] and peer[1] == own[1] and (own[2] - peer[2]) >= PATCH_BEHIND_THRESHOLD:
         return f"v{peer[0]}.{peer[1]}.{peer[2]} (patch {own[2] - peer[2]} behind)"
     return None
 
 
-def discover_thread(token: str, channel_id: str) -> str:
+def discover_thread(client: SlackClient, channel_id: str) -> str:
     """Find the pinned 'Agent Status Check' message ts."""
-    pins = slack_api("pins.list", token, params={"channel": channel_id})
+    pins = client.get("pins.list", params={"channel": channel_id})
     for item in pins.get("items", []):
         msg = item.get("message", {})
         if "agent status check" in msg.get("text", "").lower():
@@ -236,105 +186,89 @@ def discover_thread(token: str, channel_id: str) -> str:
     sys.exit("ERROR: No pinned 'Agent Status Check' message found in channel.")
 
 
-def discover_own_message(token: str, channel_id: str, thread_ts: str, user_id: str) -> str | None:
+def discover_own_message(client: SlackClient, channel_id: str, thread_ts: str, user_id: str) -> str | None:
     """Find this agent's most recent reply in the thread."""
-    replies = slack_api("conversations.replies", token, params={
-        "channel": channel_id, "ts": thread_ts, "limit": "50",
-    })
-    own_msgs = [
-        m for m in replies.get("messages", [])
-        if m.get("user") == user_id and m.get("ts") != thread_ts
-    ]
+    replies = client.get(
+        "conversations.replies",
+        params={
+            "channel": channel_id,
+            "ts": thread_ts,
+            "limit": THREAD_REPLY_LIMIT,
+        },
+    )
+    own_msgs = [m for m in replies.get("messages", []) if m.get("user") == user_id and m.get("ts") != thread_ts]
     if own_msgs:
         return sorted(own_msgs, key=lambda m: m["ts"])[-1]["ts"]
     return None
 
 
-def parse_args(argv: list[str]) -> tuple[str | None, bool, str | None]:
-    """Parse CLI arguments. Returns (channel_id, maintenance, duration)."""
-    maintenance = False
-    duration = None
-    channel_id = None
-    args = argv[1:]  # skip script name
-    i = 0
-    while i < len(args):
-        if args[i] == "--maintenance":
-            maintenance = True
-            # Next arg is duration if it looks like one (digits + unit suffix)
-            if i + 1 < len(args) and re.match(r"^\d+[smhd]$", args[i + 1]):
-                duration = args[i + 1]
-                i += 2
-            else:
-                i += 1
-        else:
-            channel_id = args[i]
-            i += 1
-    return channel_id, maintenance, duration
-
-
-def main():
-    token = load_token()
-    user_id = load_identity(token)
-
-    channel_id, maintenance, duration = parse_args(sys.argv)
-
-    # Determine channel
+def _resolve_channel_id(channel_id: str | None, client: SlackClient) -> str:
+    """Resolve channel ID from argument or slack.conf default."""
     if not channel_id:
-        slack_conf = load_conf(SLACK_CONF)
+        slack_conf = load_config()
         default = slack_conf.get("DEFAULT_CHANNEL", "")
         if default:
-            channel_id = resolve_channel(default, token)
+            channel_id = resolve_channel(client.get, default)
     if not channel_id:
         sys.exit("ERROR: No channel specified and no DEFAULT_CHANNEL in slack.conf")
+    return channel_id
 
-    digit, emoji, heartbeat_text = calculate_heartbeat(maintenance, duration)
 
-    # Load cached config
-    conf = load_conf(CONFIG_FILE)
+def _bootstrap_thread(client: SlackClient, channel_id: str, conf: dict) -> str:
+    """Bootstrap: discover or load the pinned thread ts."""
     thread_ts = conf.get("HEARTBEAT_THREAD_TS", "")
-    msg_ts = conf.get("HEARTBEAT_MSG_TS", "")
-
-    # Bootstrap: discover pinned thread
     if not thread_ts:
-        thread_ts = discover_thread(token, channel_id)
+        thread_ts = discover_thread(client, channel_id)
+    return thread_ts
 
-    # Bootstrap: discover own message in thread
+
+def _bootstrap_message(
+    client: SlackClient, channel_id: str, thread_ts: str, user_id: str, conf: dict, heartbeat_text: str
+) -> str:
+    """Bootstrap: discover or create this agent's heartbeat message."""
+    msg_ts = conf.get("HEARTBEAT_MSG_TS", "")
     if not msg_ts:
-        msg_ts = discover_own_message(token, channel_id, thread_ts, user_id)
+        msg_ts = discover_own_message(client, channel_id, thread_ts, user_id)
         if not msg_ts:
-            # Post a new reply
-            result = slack_api("chat.postMessage", token, post_data={
-                "channel": channel_id,
-                "text": heartbeat_text,
-                "thread_ts": thread_ts,
-            })
+            result = client.post(
+                "chat.postMessage",
+                {
+                    "channel": channel_id,
+                    "text": heartbeat_text,
+                    "thread_ts": thread_ts,
+                },
+            )
             msg_ts = result.get("message", {}).get("ts") or result.get("ts")
             if not msg_ts:
                 sys.exit("ERROR: Failed to post heartbeat message.")
+    return msg_ts
 
-    # Save config
-    save_conf(CONFIG_FILE, {
-        "HEARTBEAT_THREAD_TS": thread_ts,
-        "HEARTBEAT_MSG_TS": msg_ts,
-    })
 
-    # Update own heartbeat message
-    result = slack_api("chat.update", token, post_data={
-        "channel": channel_id,
-        "text": heartbeat_text,
-        "ts": msg_ts,
-    })
+def _update_heartbeat(client: SlackClient, channel_id: str, heartbeat_text: str, msg_ts: str) -> None:
+    """Update own heartbeat message in Slack."""
+    result = client.post(
+        "chat.update",
+        {
+            "channel": channel_id,
+            "text": heartbeat_text,
+            "ts": msg_ts,
+        },
+    )
     if not result.get("ok"):
-        # Clear cache so next run re-bootstraps
         CONFIG_FILE.unlink(missing_ok=True)
         sys.exit(f"ERROR: Failed to update heartbeat: {result.get('error')}")
 
-    # --- Watchdog: check peers ---
-    replies = slack_api("conversations.replies", token, params={
-        "channel": channel_id, "ts": thread_ts, "limit": "50",
-    })
 
-    # Group by user, take latest message per bot user (excluding self and parent)
+def _collect_peer_messages(client: SlackClient, channel_id: str, thread_ts: str, user_id: str) -> dict[str, dict]:
+    """Fetch thread replies and group by user, keeping latest message per bot user."""
+    replies = client.get(
+        "conversations.replies",
+        params={
+            "channel": channel_id,
+            "ts": thread_ts,
+            "limit": THREAD_REPLY_LIMIT,
+        },
+    )
     bot_msgs: dict[str, dict] = {}
     for msg in replies.get("messages", []):
         if msg.get("ts") == thread_ts:
@@ -346,72 +280,182 @@ def main():
         uid = msg["user"]
         if uid not in bot_msgs or msg["ts"] > bot_msgs[uid]["ts"]:
             bot_msgs[uid] = msg
+    return bot_msgs
 
-    # Check each peer's digit and version
+
+def _check_peers(
+    client: SlackClient, bot_msgs: dict[str, dict], digit: int, heartbeat_text: str
+) -> tuple[list[str], list[str]]:
+    """Check each peer's digit and version, return (stale, outdated) lists."""
     own_version = parse_version(heartbeat_text)
-    stale = []
-    outdated = []
+    stale: list[str] = []
+    outdated: list[str] = []
     for uid, msg in bot_msgs.items():
         peer_text = msg.get("text", "")
-        display = resolve_user(uid)
+        display = resolve_user(client.get, uid)
 
-        # Skip peers in maintenance mode
         if parse_maintenance(peer_text):
             continue
 
-        # Digit staleness check
         their_digit = parse_digit(peer_text)
         if their_digit is not None:
             gap = (digit - their_digit + 10) % 10
-            if gap >= 5:
+            if gap >= STALENESS_THRESHOLD:
                 stale.append(f"{display} (digit {their_digit}, {gap} behind)")
 
-        # Version check
         if own_version:
             peer_version = parse_version(peer_text)
             if peer_version:
                 behind = check_version_behind(own_version, peer_version)
                 if behind:
                     outdated.append(f"{display} on {behind}")
+    return stale, outdated
 
-    # Dedup: check recent channel messages to avoid repeating alerts (AGT-48)
-    recent_alerts: list[str] = []
-    if stale or outdated:
-        cooldown_seconds = 600  # 10 minutes
-        now_ts = datetime.now().timestamp()
-        oldest_ts = str(now_ts - cooldown_seconds)
-        try:
-            history = slack_api("conversations.history", token, params={
-                "channel": channel_id, "limit": "30", "oldest": oldest_ts,
-            })
-            recent_alerts = [
-                m.get("text", "") for m in history.get("messages", [])
-                if m.get("bot_id") is not None
-            ]
-        except Exception:
-            pass  # If dedup check fails, fall through and post anyway
 
+def _fetch_recent_alerts(client: SlackClient, channel_id: str) -> list[str]:
+    """Fetch recent bot messages for dedup checking."""
+    now_ts = datetime.now(tz=timezone.utc).timestamp()
+    oldest_ts = str(now_ts - DEDUP_COOLDOWN_SECONDS)
+    try:
+        history = client.get(
+            "conversations.history",
+            params={
+                "channel": channel_id,
+                "limit": DEDUP_HISTORY_LIMIT,
+                "oldest": oldest_ts,
+            },
+        )
+        return [m.get("text", "") for m in history.get("messages", []) if m.get("bot_id") is not None]
+    except Exception:
+        return []  # If dedup check fails, fall through and post anyway
+
+
+def _send_alerts(stale: list[str], outdated: list[str], channel_id: str, recent_alerts: list[str]) -> None:
+    """Send stale/outdated alerts if not already reported."""
     if stale:
         alert = "@here Heartbeat check: possibly stale agents: " + ", ".join(stale)
-        # Skip if any recent bot message already contains a stale alert for the same agents
         already_reported = any("Heartbeat check: possibly stale" in a for a in recent_alerts)
         if not already_reported:
-            subprocess.run(
+            subprocess.run(  # noqa: S603
                 [str(SCRIPT_DIR / "slack-send"), channel_id, alert],
                 capture_output=True,
+                check=False,
             )
 
     if outdated:
         alert = "@here Version check: outdated agents: " + ", ".join(outdated)
         already_reported = any("Version check: outdated" in a for a in recent_alerts)
         if not already_reported:
-            subprocess.run(
+            subprocess.run(  # noqa: S603
                 [str(SCRIPT_DIR / "slack-send"), channel_id, alert],
                 capture_output=True,
+                check=False,
             )
 
-    print(f"ok: {heartbeat_text}")
+
+# --- Core function (no typer deps) ---
+
+
+def run_heartbeat(
+    channel_id: str | None = None,
+    maintenance: bool = False,
+    duration: str | None = None,
+) -> str:
+    """Run heartbeat update and peer watchdog check.
+
+    Callable from other modules (e.g. the poll daemon) without subprocess.
+    Returns the heartbeat status text.
+    """
+    import os
+
+    config = load_config()
+    token = load_token()
+    proxy_url = os.environ.get("SLACK_PROXY_URL", config.get("SLACK_PROXY_URL"))
+    client = SlackClient(token, proxy_url=proxy_url)
+    try:
+        identity = load_identity(client.get)
+        user_id = identity["USER_ID"]
+
+        resolved_channel = _resolve_channel_id(channel_id, client)
+
+        _digit, _emoji, heartbeat_text = calculate_heartbeat(maintenance, duration)
+
+        # Load cached config and bootstrap thread/message
+        conf = load_conf(CONFIG_FILE)
+        thread_ts = _bootstrap_thread(client, resolved_channel, conf)
+        msg_ts = _bootstrap_message(client, resolved_channel, thread_ts, user_id, conf, heartbeat_text)
+
+        # Save config
+        save_conf(
+            CONFIG_FILE,
+            {
+                "HEARTBEAT_THREAD_TS": thread_ts,
+                "HEARTBEAT_MSG_TS": msg_ts,
+            },
+        )
+
+        # Update own heartbeat message
+        _update_heartbeat(client, resolved_channel, heartbeat_text, msg_ts)
+
+        # --- Watchdog: check peers ---
+        bot_msgs = _collect_peer_messages(client, resolved_channel, thread_ts, user_id)
+        stale, outdated = _check_peers(client, bot_msgs, _digit, heartbeat_text)
+
+        # Dedup and send alerts
+        recent_alerts: list[str] = []
+        if stale or outdated:
+            recent_alerts = _fetch_recent_alerts(client, resolved_channel)
+        _send_alerts(stale, outdated, resolved_channel, recent_alerts)
+    finally:
+        client.close()
+
+    return heartbeat_text
+
+
+# --- Typer CLI ---
+
+
+@app.command()
+def run(
+    channel_id: Optional[str] = typer.Argument(None, help="Channel ID (default: from slack.conf)"),  # noqa: UP045
+    maintenance: bool = typer.Option(False, "--maintenance", help="Signal maintenance mode"),
+    duration: Optional[str] = typer.Option(None, "--duration", help="Maintenance duration (e.g. 2h, 30m, 1d)"),  # noqa: UP045
+    verbose: int = COMMON_OPTIONS["verbose"],
+    debug: bool = COMMON_OPTIONS["debug"],
+    dry_run: bool = COMMON_OPTIONS["dry_run"],
+) -> None:
+    """Run heartbeat update and peer watchdog check."""
+    _apply_globals(verbose, debug)
+    _debug_log(f"channel_id={channel_id}, maintenance={maintenance}, duration={duration}")
+    if dry_run:
+        _digit, _emoji, text = calculate_heartbeat(maintenance, duration)
+        typer.echo(f"dry-run: {text}")
+        return
+    result = run_heartbeat(channel_id, maintenance, duration)
+    typer.echo(f"ok: {result}")
+
+
+@app.callback(invoke_without_command=True)
+def main(
+    ctx: typer.Context,
+    channel_id: Optional[str] = typer.Argument(None, help="Channel ID (default: from slack.conf)"),  # noqa: UP045
+    maintenance: bool = typer.Option(False, "--maintenance", help="Signal maintenance mode"),
+    duration: Optional[str] = typer.Option(None, "--duration", help="Maintenance duration (e.g. 2h, 30m, 1d)"),  # noqa: UP045
+    verbose: int = COMMON_OPTIONS["verbose"],
+    debug: bool = COMMON_OPTIONS["debug"],
+    dry_run: bool = COMMON_OPTIONS["dry_run"],
+) -> None:
+    """Update agent heartbeat in Slack status thread."""
+    _apply_globals(verbose, debug)
+    if ctx.invoked_subcommand is None:
+        _debug_log(f"channel_id={channel_id}, maintenance={maintenance}, duration={duration}")
+        if dry_run:
+            _digit, _emoji, text = calculate_heartbeat(maintenance, duration)
+            typer.echo(f"dry-run: {text}")
+            return
+        result = run_heartbeat(channel_id, maintenance, duration)
+        typer.echo(f"ok: {result}")
 
 
 if __name__ == "__main__":
-    main()
+    app()

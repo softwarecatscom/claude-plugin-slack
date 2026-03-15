@@ -16,6 +16,8 @@ SCRIPTS_DIR=$(find ~/.claude/plugins/cache -path "*/scc-slack/*/scripts/slack-id
 
 **Prefer `ctx_execute` over Bash** when running scripts that produce output. This keeps raw output in the sandbox and protects your context window. Use Bash only for the `SCRIPTS_DIR` setup above and file mutation commands (`mkdir`, `cp`, `cat >`).
 
+> **Note:** Step 5 writes `SCRIPTS_DIR` into `slack.conf` so that all other skills can `source ~/.claude/slack.conf` instead of running the find pipeline every time.
+
 ## Step 1: Check dependencies
 
 Verify `curl` and `jq` are installed (via `ctx_execute`):
@@ -102,16 +104,29 @@ If config exists but contains a `SLACK_TOKEN=` line, strip it — the token is m
 "${SCRIPTS_DIR}/slack-config-strip" SLACK_TOKEN
 ```
 
-If no config exists, ask the user for:
-- **Default channel** (e.g., `general`)
-- **Autonomous channels** (comma-separated list of channels to monitor in polling mode)
+If no config exists, interview the user for settings:
 
-Write the config file (**no token** — that's managed by slack-cli):
+1. **Default channel** — e.g., `agents`
+2. **Autonomous channels** — comma-separated list of channels to monitor (default: same as default channel)
+3. **Slack proxy** — interview-style:
+   - "Do you want to use a caching proxy? (y/n, default: n)"
+   - If yes: "Proxy hostname? (default: z490.lionsden.gbr)"
+   - If yes: "Proxy port? (default: 8321)"
+   - Construct URL: `http://<hostname>:<port>`
+   - If no: set to `none`
+
+Write the config file (**no token** — that's managed by slack-cli). Include `SCRIPTS_DIR` so all skills can source the conf instead of running a find pipeline:
 ```bash
-cat > ~/.claude/slack.conf << 'CONF'
+cat > ~/.claude/slack.conf << CONF
 DEFAULT_CHANNEL=<channel>
 AUTONOMOUS_CHANNELS=<channels>
+SCRIPTS_DIR="${SCRIPTS_DIR}"
 CONF
+```
+
+If the user configured a proxy (not "none"), also add:
+```bash
+echo 'SLACK_PROXY_URL="http://<hostname>:<port>"' >> ~/.claude/slack.conf
 ```
 
 ## Step 6: Verify

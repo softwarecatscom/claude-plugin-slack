@@ -33,9 +33,9 @@ After updating its own heartbeat, the script checks all peer bot messages in the
 
 ## Steps
 
-1. Run the heartbeat script via `ctx_execute`:
+1. Load plugin config and run the heartbeat script via `ctx_execute`:
    ```bash
-   SCRIPTS_DIR=$(find ~/.claude/plugins/cache -path "*/scc-slack/*/scripts/slack-heartbeat" 2>/dev/null | sort -V | tail -1 | xargs dirname)
+   source ~/.claude/slack.conf
    "${SCRIPTS_DIR}/slack-heartbeat" [CHANNEL_ID]
    ```
 
@@ -82,9 +82,9 @@ When entering maintenance (plugin updates, session restarts, OS upgrades), signa
 
 ## Scheduling
 
-Heartbeat runs automatically as part of `slack-poll` — every poll cycle updates the heartbeat after checking for messages.
+Heartbeat runs automatically as part of the poll daemon — every poll cycle updates the heartbeat after checking for messages.
 
-**DO NOT create a separate cron job for `/heartbeat`.** The heartbeat is built into `slack-poll`. If you are polling, you are heartbeating. Creating a separate heartbeat cron is redundant, wastes API calls, and causes confusion when the cron dies independently of polling.
+**DO NOT create a separate cron job for `/heartbeat`.** The heartbeat is built into the daemon. If you are polling, you are heartbeating. Creating a separate heartbeat cron is redundant, wastes API calls, and causes confusion when the cron dies independently of polling.
 
 To run heartbeat manually via `ctx_execute` (e.g. after a fresh start before the first poll fires, or to force an immediate update):
 ```bash

@@ -30,7 +30,7 @@ if [ -z "${SLACK_TOKEN}" ]; then
 fi
 
 # auth.test to get user_id and username
-AUTH=$(slack_curl -s -H "Authorization: Bearer ${SLACK_TOKEN}" ${SLACK_API_BASE}/api/auth.test)
+AUTH=$(slack_curl -s -H "Authorization: Bearer ${SLACK_TOKEN}" "${SLACK_API_BASE}/api/auth.test")
 if [ "$(echo "${AUTH}" | jq -r '.ok')" != "true" ]; then
   echo "ERROR: auth.test failed: $(echo "${AUTH}" | jq -r '.error')" >&2
   exit 1

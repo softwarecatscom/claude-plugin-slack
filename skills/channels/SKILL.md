@@ -9,9 +9,9 @@ List all public channels (and private channels if `groups:read` scope is granted
 
 ## Scripts
 
-Locate the plugin scripts once per session:
+Load plugin config (provides SCRIPTS_DIR, DEFAULT_CHANNEL, AUTONOMOUS_CHANNELS):
 ```bash
-SCRIPTS_DIR=$(find ~/.claude/plugins/cache -path "*/scc-slack/*/scripts/slack-identity" 2>/dev/null | sort -V | tail -1 | xargs dirname)
+source ~/.claude/slack.conf
 ```
 
 **ALWAYS use `slack-channels` to list channels.** Do NOT call `conversations.list` directly with curl.

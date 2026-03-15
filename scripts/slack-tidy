@@ -70,7 +70,7 @@ done < "${CURSOR_FILE}"
 
 # Reset cursor file
 if [ "${DRY_RUN}" = "false" ]; then
-  > "${CURSOR_FILE}"
+  true > "${CURSOR_FILE}"
   echo ""
   echo "Tidied ${count} channel(s). Cursor file reset."
 else

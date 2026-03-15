@@ -17,12 +17,32 @@ claude plugin update scc-slack@scc-marketplace
 
 This pulls the latest version from the scc-marketplace registry.
 
-### Step 2: Clear caches
+### Step 2: Update config and clear caches
 
-Remove stale cached data that may cause issues with the new version (via `ctx_execute`):
+Locate the new scripts directory:
 
 ```bash
 SCRIPTS_DIR=$(find ~/.claude/plugins/cache -path "*/scc-slack/*/scripts/slack-identity" 2>/dev/null | sort -V | tail -1 | xargs dirname)
+```
+
+Update `SCRIPTS_DIR` in `slack.conf`:
+```bash
+sed -i '/^SCRIPTS_DIR=/d' ~/.claude/slack.conf
+echo "SCRIPTS_DIR=\"${SCRIPTS_DIR}\"" >> ~/.claude/slack.conf
+```
+
+Check `SLACK_PROXY_URL` — if missing, ask the user:
+```bash
+grep SLACK_PROXY_URL ~/.claude/slack.conf
+```
+- If present: leave it (already configured)
+- If missing: ask "Do you want to configure a caching proxy? (y/n, default: n)"
+  - If yes: "Hostname? (default: z490.lionsden.gbr)" then "Port? (default: 8321)"
+  - Add `SLACK_PROXY_URL="http://<hostname>:<port>"` to slack.conf
+  - If no or "none": skip — daemon falls back to direct Slack automatically
+
+Clear stale cached data (via `ctx_execute`):
+```bash
 "${SCRIPTS_DIR}/slack-cache-clear"
 ```
 
@@ -42,18 +62,18 @@ Before reporting success, complete all of these checks:
    ```
    The new version directory should be present.
 
-2. **Test poll** — run a test poll via `ctx_execute` to verify the scripts work:
+2. **Test poll** — run a single daemon cycle via `ctx_execute` to verify the scripts work:
    ```bash
-   SCRIPTS_DIR=$(find ~/.claude/plugins/cache -path "*/scc-slack/*/scripts/slack-identity" 2>/dev/null | sort -V | tail -1 | xargs dirname)
-   "${SCRIPTS_DIR}/slack-poll"
+   source ~/.claude/slack.conf
+   "${SCRIPTS_DIR}/slack-poll" --once
    ```
-   Verify the output contains channel headers (`# channel=...`) and a heartbeat line (`ok: :<digit>: v<version>`). Check for errors.
+   Verify it runs without errors. If there are actionable messages, output will contain channel headers (`# channel=...`) and JSON arrays.
 
-3. **Polling version** — confirm the reload applied the new version path:
+3. **SCRIPTS_DIR** — confirm `slack.conf` points to the new version:
    ```bash
-   find ~/.claude/plugins/cache -path "*/scc-slack/*/scripts/slack-identity" 2>/dev/null | sort -V | tail -1
+   grep SCRIPTS_DIR ~/.claude/slack.conf
    ```
-   The path should reference the new version.
+   The path should reference the new version directory.
 
 4. **Version confirmation** — only report "Updated to vX.Y.Z" after all checks pass.
 
