@@ -33,9 +33,9 @@ After updating its own heartbeat, the script checks all peer bot messages in the
 
 ## Steps
 
-1. Run the heartbeat script via `ctx_execute`:
+1. Load plugin config and run the heartbeat script via `ctx_execute`:
    ```bash
-   SCRIPTS_DIR=$(find ~/.claude/plugins/cache -path "*/scc-slack/*/scripts/slack-heartbeat" 2>/dev/null | sort -V | tail -1 | xargs dirname)
+   source ~/.claude/slack.conf
    "${SCRIPTS_DIR}/slack-heartbeat" [CHANNEL_ID]
    ```
 

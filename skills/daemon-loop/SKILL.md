@@ -9,10 +9,10 @@ Supervises the long-poll daemon. Called every minute by the `/loop 1m` cron. Zer
 
 ## Setup
 
-Locate scripts once per session:
+Load plugin config (provides SCRIPTS_DIR, DEFAULT_CHANNEL, AUTONOMOUS_CHANNELS):
 
 ```bash
-SCRIPTS_DIR=$(find ~/.claude/plugins/cache -path "*/scc-slack/*/scripts/slack-poll-daemon" 2>/dev/null | sort -V | tail -1 | xargs dirname)
+source ~/.claude/slack.conf
 ```
 
 ## Step 1: Check daemon status

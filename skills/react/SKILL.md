@@ -37,9 +37,9 @@ When inferring, prefer these high-confidence mappings:
 
 ## Scripts
 
-Locate the plugin scripts once per session:
+Load plugin config (provides SCRIPTS_DIR, DEFAULT_CHANNEL, AUTONOMOUS_CHANNELS):
 ```bash
-SCRIPTS_DIR=$(find ~/.claude/plugins/cache -path "*/scc-slack/*/scripts/slack-identity" 2>/dev/null | sort -V | tail -1 | xargs dirname)
+source ~/.claude/slack.conf
 ```
 
 **Prefer `ctx_execute` over Bash** when running scripts that produce output. This keeps raw output in the sandbox and protects your context window.
@@ -48,7 +48,7 @@ SCRIPTS_DIR=$(find ~/.claude/plugins/cache -path "*/scc-slack/*/scripts/slack-id
 
 ### Step 1: Load scripts
 
-Locate the plugin scripts once per session (see Scripts above). **Always use `slack-react` for reactions — do not call the Slack API directly.**
+Load plugin config (see Scripts above). **Always use `slack-react` for reactions — do not call the Slack API directly.**
 
 ### Step 2: Determine the target message
 

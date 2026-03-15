@@ -11,7 +11,7 @@ Stop the recurring Slack polling loop and the poll daemon.
 
 1. **Stop the daemon:**
    ```bash
-   SCRIPTS_DIR=$(find ~/.claude/plugins/cache -path "*/scc-slack/*/scripts/slack-poll-daemon" 2>/dev/null | sort -V | tail -1 | xargs dirname)
+   source ~/.claude/slack.conf
    "${SCRIPTS_DIR}/slack-poll-daemon" --stop
    ```
 

@@ -16,6 +16,8 @@ SCRIPTS_DIR=$(find ~/.claude/plugins/cache -path "*/scc-slack/*/scripts/slack-id
 
 **Prefer `ctx_execute` over Bash** when running scripts that produce output. This keeps raw output in the sandbox and protects your context window. Use Bash only for the `SCRIPTS_DIR` setup above and file mutation commands (`mkdir`, `cp`, `cat >`).
 
+> **Note:** Step 5 writes `SCRIPTS_DIR` into `slack.conf` so that all other skills can `source ~/.claude/slack.conf` instead of running the find pipeline every time.
+
 ## Step 1: Check dependencies
 
 Verify `curl` and `jq` are installed (via `ctx_execute`):
@@ -106,11 +108,12 @@ If no config exists, ask the user for:
 - **Default channel** (e.g., `general`)
 - **Autonomous channels** (comma-separated list of channels to monitor in polling mode)
 
-Write the config file (**no token** — that's managed by slack-cli):
+Write the config file (**no token** — that's managed by slack-cli). Include `SCRIPTS_DIR` so all skills can source the conf instead of running a find pipeline:
 ```bash
-cat > ~/.claude/slack.conf << 'CONF'
+cat > ~/.claude/slack.conf << CONF
 DEFAULT_CHANNEL=<channel>
 AUTONOMOUS_CHANNELS=<channels>
+SCRIPTS_DIR="${SCRIPTS_DIR}"
 CONF
 ```
 

@@ -17,12 +17,22 @@ claude plugin update scc-slack@scc-marketplace
 
 This pulls the latest version from the scc-marketplace registry.
 
-### Step 2: Clear caches
+### Step 2: Clear caches and update SCRIPTS_DIR
 
-Remove stale cached data that may cause issues with the new version (via `ctx_execute`):
+Locate the new scripts directory and update `slack.conf`:
 
 ```bash
 SCRIPTS_DIR=$(find ~/.claude/plugins/cache -path "*/scc-slack/*/scripts/slack-identity" 2>/dev/null | sort -V | tail -1 | xargs dirname)
+```
+
+Update `SCRIPTS_DIR` in `slack.conf` so all skills use the new version:
+```bash
+sed -i '/^SCRIPTS_DIR=/d' ~/.claude/slack.conf
+echo "SCRIPTS_DIR=\"${SCRIPTS_DIR}\"" >> ~/.claude/slack.conf
+```
+
+Clear stale cached data (via `ctx_execute`):
+```bash
 "${SCRIPTS_DIR}/slack-cache-clear"
 ```
 
@@ -44,16 +54,16 @@ Before reporting success, complete all of these checks:
 
 2. **Test poll** — run a single daemon cycle via `ctx_execute` to verify the scripts work:
    ```bash
-   SCRIPTS_DIR=$(find ~/.claude/plugins/cache -path "*/scc-slack/*/scripts/slack-poll-daemon" 2>/dev/null | sort -V | tail -1 | xargs dirname)
+   source ~/.claude/slack.conf
    "${SCRIPTS_DIR}/slack-poll-daemon" --once
    ```
    Verify it runs without errors. If there are actionable messages, output will contain channel headers (`# channel=...`) and JSON arrays.
 
-3. **Polling version** — confirm the reload applied the new version path:
+3. **SCRIPTS_DIR** — confirm `slack.conf` points to the new version:
    ```bash
-   find ~/.claude/plugins/cache -path "*/scc-slack/*/scripts/slack-identity" 2>/dev/null | sort -V | tail -1
+   grep SCRIPTS_DIR ~/.claude/slack.conf
    ```
-   The path should reference the new version.
+   The path should reference the new version directory.
 
 4. **Version confirmation** — only report "Updated to vX.Y.Z" after all checks pass.
 

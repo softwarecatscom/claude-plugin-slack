@@ -13,9 +13,9 @@ Process actionable messages from the Slack poll daemon, identify what needs your
 
 ## Scripts
 
-This skill uses helper scripts in `scripts/` (found via the plugin cache). Locate them once per session:
+This skill uses helper scripts in `scripts/`. Load plugin config (provides SCRIPTS_DIR, DEFAULT_CHANNEL, AUTONOMOUS_CHANNELS):
 ```bash
-SCRIPTS_DIR=$(find ~/.claude/plugins/cache -path "*/scc-slack/*/scripts/slack-identity" 2>/dev/null | sort -V | tail -1 | xargs dirname)
+source ~/.claude/slack.conf
 ```
 
 **ALWAYS use the `scripts/slack-*` helpers for Slack operations.** Do NOT call the Slack API directly with curl. The scripts handle token loading, channel resolution, mention encoding (`@here` → `<!here>`, `@Name` → `<@USERID>`), and JSON payload construction correctly. Calling the API directly bypasses this and introduces bugs (e.g., Claude Code's Bash tool escapes `!` in `<!here>`, breaking broadcast mentions). If a script doesn't exist for what you need, add one — don't inline curl calls.
