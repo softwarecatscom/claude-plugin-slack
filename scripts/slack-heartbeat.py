@@ -108,9 +108,19 @@ def save_conf(path: Path, data: dict) -> None:
 
 
 def detect_version() -> str:
-    """Detect scc-slack version from the script path."""
+    """Detect scc-slack version from script path or plugin.json."""
     match = re.search(r"(\d+\.\d+\.\d+)", str(SCRIPT_DIR))
-    return match.group(1) if match else "unknown"
+    if match:
+        return match.group(1)
+    # Fallback: read from plugin.json (when running from repo)
+    plugin_json = SCRIPT_DIR.parent / ".claude-plugin" / "plugin.json"
+    if plugin_json.exists():
+        import json
+
+        data = json.loads(plugin_json.read_text())
+        if "version" in data:
+            return data["version"]
+    return "unknown"
 
 
 def calculate_heartbeat(maintenance: bool = False, duration: str | None = None) -> tuple[int, str, str]:
