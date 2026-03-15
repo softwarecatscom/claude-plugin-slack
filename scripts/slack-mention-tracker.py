@@ -69,6 +69,7 @@ def responded(channel, thread_ts, user_id):
 
 
 def tick():
+    """Increment cycles, return expired entries. No stdout."""
     state = load_state()
     expired = []
     for entry in state:
@@ -77,7 +78,7 @@ def tick():
             entry["alerted"] = True
             expired.append(dict(entry))
     save_state(state)
-    print(json.dumps(expired))
+    return expired
 
 
 def list_all():
@@ -112,7 +113,8 @@ def main():
             sys.exit(1)
         responded(sys.argv[2], sys.argv[3], sys.argv[4])
     elif cmd == "tick":
-        tick()
+        expired = tick()
+        print(json.dumps(expired))
     elif cmd == "list":
         list_all()
     else:
