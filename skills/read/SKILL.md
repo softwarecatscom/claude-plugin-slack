@@ -1,6 +1,6 @@
 ---
 name: read
-description: Process Slack messages from the daemon. Use when the daemon-loop skill wakes you with actionable messages, or when the user says "check slack", "read slack".
+description: Process Slack messages from the poller. Use when the poller-loop skill wakes you with actionable messages, or when the user says "check slack", "read slack".
 ---
 
 # Read Slack Messages
@@ -15,7 +15,7 @@ Use `scripts/slack-*` helpers for Slack operations. Prefer `ctx_execute` for scr
 
 ## Input
 
-The daemon outputs a JSON array of enriched messages. Each message has:
+The poller outputs a JSON array of enriched messages. Each message has:
 - `channel`, `channel_id` — where it happened
 - `sender`, `user` — display name and user ID
 - `text`, `ts` — message content and timestamp
@@ -25,7 +25,7 @@ The daemon outputs a JSON array of enriched messages. Each message has:
 
 Sender names are pre-resolved. Thread context is pre-fetched. Mention tracking for thread replies is auto-cleared. The agent only needs to evaluate and respond.
 
-If invoked manually (not from daemon): `"${SCRIPTS_DIR}/slack-poll" --once`
+If invoked manually (not from poller): `"${SCRIPTS_DIR}/slack-poll" --once`
 
 ## Process each message
 

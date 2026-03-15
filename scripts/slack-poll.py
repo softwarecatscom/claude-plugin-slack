@@ -56,7 +56,7 @@ MAX_THREADS = 5
 CATCHUP_ACTIONABLE_LIMIT = 5
 PID_FILE = Path.home() / ".claude" / "slack-poll.pid"
 
-# --- Daemon Options ---
+# --- Poller Options ---
 
 POLL_OPTIONS = {
     "interval": typer.Option(None, "--interval", "-i", help="Poll interval in seconds"),
@@ -321,22 +321,22 @@ def _apply_globals(verbose: int, debug: bool) -> None:
 
 @app.command()
 def stop() -> None:
-    """Stop a running daemon."""
+    """Stop a running poller."""
     pid = read_pid()
     if pid:
         try:
             os.kill(pid, signal.SIGTERM)
-            typer.echo(f"Stopped daemon (PID {pid})")
+            typer.echo(f"Stopped poller (PID {pid})")
         except ProcessLookupError:
-            typer.echo("Daemon not running (stale PID file)")
+            typer.echo("Poller not running (stale PID file)")
         PID_FILE.unlink(missing_ok=True)
     else:
-        typer.echo("Daemon not running")
+        typer.echo("Poller not running")
 
 
 @app.command()
 def status() -> None:
-    """Check if daemon is running."""
+    """Check if poller is running."""
     pid = read_pid()
     if pid:
         typer.echo(f"running (PID {pid})")
@@ -353,7 +353,7 @@ def once(
 ) -> None:
     """Run a single poll cycle (for testing)."""
     _apply_globals(verbose, debug)
-    _run_daemon(once=True, dry_run=dry_run, include_context=context)
+    _run_poller(once=True, dry_run=dry_run, include_context=context)
 
 
 @app.command()
@@ -364,9 +364,9 @@ def run(
     interval: Optional[int] = POLL_OPTIONS["interval"],  # noqa: UP045
     context: bool = POLL_OPTIONS["context"],
 ) -> None:
-    """Run daemon until actionable messages found (default command)."""
+    """Run poller until actionable messages found (default command)."""
     _apply_globals(verbose, debug)
-    _run_daemon(once=False, dry_run=dry_run, interval_override=interval, include_context=context)
+    _run_poller(once=False, dry_run=dry_run, interval_override=interval, include_context=context)
 
 
 @app.callback(invoke_without_command=True)
@@ -381,16 +381,16 @@ def main(
     """Slack poller — long-poll monitor for Slack channels."""
     _apply_globals(verbose, debug)
     if ctx.invoked_subcommand is None:
-        _run_daemon(once=False, dry_run=dry_run, interval_override=interval, include_context=context)
+        _run_poller(once=False, dry_run=dry_run, interval_override=interval, include_context=context)
 
 
-def _run_daemon(
+def _run_poller(
     *, once: bool = False, dry_run: bool = False, interval_override: int | None = None, include_context: bool = False
 ) -> None:
-    """Core daemon loop."""
+    """Core poller loop."""
     existing_pid = read_pid()
     if existing_pid:
-        typer.echo(f"ERROR: Daemon already running (PID {existing_pid}). Use 'stop' first.", err=True)
+        typer.echo(f"ERROR: Poller already running (PID {existing_pid}). Use 'stop' first.", err=True)
         raise typer.Exit(code=1)
 
     write_pid()
@@ -408,7 +408,7 @@ def _run_daemon(
     _debug_log(f"Channels: {channels}")
     _debug_log(f"Proxy: {proxy_url or '(direct)'}")
     _debug_log(f"Interval: {poll_interval}s")
-    _debug_log(f"Mode: {'once' if once else 'daemon'}")
+    _debug_log(f"Mode: {'once' if once else 'poller'}")
     if dry_run:
         _log("DRY RUN mode enabled", level=0)
 

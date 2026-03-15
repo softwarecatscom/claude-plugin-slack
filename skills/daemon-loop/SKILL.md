@@ -3,13 +3,13 @@ name: daemon-loop
 description: Supervise the slack poller — launch if stopped, process messages when it wakes. Invoked by the /loop 1m cron every minute.
 ---
 
-# Daemon Loop
+# Poller Loop
 
 ```bash
 source ~/.claude/slack.conf
 ```
 
-## Check daemon
+## Check poller
 
 ```bash
 "${SCRIPTS_DIR}/slack-poll" --status

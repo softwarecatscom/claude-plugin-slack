@@ -39,7 +39,7 @@ grep SLACK_PROXY_URL ~/.claude/slack.conf
 - If missing: ask "Do you want to configure a caching proxy? (y/n, default: n)"
   - If yes: "Hostname? (default: z490.lionsden.gbr)" then "Port? (default: 8321)"
   - Add `SLACK_PROXY_URL="http://<hostname>:<port>"` to slack.conf
-  - If no or "none": skip — daemon falls back to direct Slack automatically
+  - If no or "none": skip — poller falls back to direct Slack automatically
 
 Clear stale cached data (via `ctx_execute`):
 ```bash
@@ -62,7 +62,7 @@ Before reporting success, complete all of these checks:
    ```
    The new version directory should be present.
 
-2. **Test poll** — run a single daemon cycle via `ctx_execute` to verify the scripts work:
+2. **Test poll** — run a single poller cycle via `ctx_execute` to verify the scripts work:
    ```bash
    source ~/.claude/slack.conf
    "${SCRIPTS_DIR}/slack-poll" --once

@@ -13,13 +13,13 @@ This creates a 1-minute cron that manages the slack poller automatically.
 ## How It Works
 
 ```
-/loop 3m cron fires
-    → daemon-loop skill checks: is daemon running?
+/loop 2m cron fires
+    → poller-loop skill checks: is poller running?
     → if stopped: launch via Bash(run_in_background: true)
     → if running: do nothing (zero cost)
 
-daemon runs in background
-    → polls Slack every 60s
+poller runs in background
+    → polls Slack every 30s
     → filters for actionable messages (direct @mentions, broadcasts, thread replies)
     → resolves sender names
     → fetches thread context
@@ -30,12 +30,12 @@ daemon runs in background
 agent gets notified (background task completed)
     → reads output with Read tool
     → processes messages: evaluate, respond in thread
-    → next cron tick re-launches daemon
+    → next cron tick re-launches poller
 ```
 
 ## Message Format
 
-The daemon outputs a JSON array. Each message has:
+The poller outputs a JSON array. Each message has:
 
 ```json
 {
@@ -80,23 +80,23 @@ source ~/.claude/slack.conf
 
 ## Seen Set
 
-The daemon tracks every message it has output in `~/.claude/slack-seen.json`. A message is never output twice. The seen set prunes entries older than 24 hours.
+The poller tracks every message it has output in `~/.claude/slack-seen.json`. A message is never output twice. The seen set prunes entries older than 24 hours.
 
-On first run (empty seen set) or after long offline: the daemon seeds all but the last 5 messages as "seen" so you don't respond to stale @mentions from hours ago.
+On first run (empty seen set) or after long offline: the poller seeds all but the last 5 messages as "seen" so you don't respond to stale @mentions from hours ago.
 
 ## DO
 
-- Use `Read` to read daemon output (not `cat` via Bash or ctx_execute)
+- Use `Read` to read poller output (not `cat` via Bash or ctx_execute)
 - Respond in threads, not the channel
-- Let the cron manage the daemon lifecycle
+- Let the cron manage the poller lifecycle
 - Use `--debug` and `--dry-run` for troubleshooting
 
 ## DO NOT
 
 - Do NOT call the Slack API directly with curl — use the scripts
-- Do NOT create a separate heartbeat cron — heartbeat is built into the daemon
+- Do NOT create a separate heartbeat cron — heartbeat is built into the poller
 - Do NOT manually manage cursors — the seen set handles deduplication
-- Do NOT load the read skill on quiet cycles — the daemon-loop skill handles status checks
+- Do NOT load the read skill on quiet cycles — the poller-loop skill handles status checks
 - Do NOT run `slack-poll once` without consuming the output — messages will be marked seen
 
 ## Troubleshooting
@@ -104,10 +104,10 @@ On first run (empty seen set) or after long offline: the daemon seeds all but th
 ```bash
 source ~/.claude/slack.conf
 
-# Check daemon status
+# Check poller status
 "${SCRIPTS_DIR}/slack-poll" status
 
-# Stop the daemon
+# Stop the poller
 "${SCRIPTS_DIR}/slack-poll" stop
 
 # Single cycle with debug output
@@ -129,4 +129,4 @@ rm ~/.claude/slack-seen.json
 /scc-slack:stop
 ```
 
-This stops the daemon and deletes the cron job.
+This stops the poller and deletes the cron job.

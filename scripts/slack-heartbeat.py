@@ -363,7 +363,7 @@ def run_heartbeat(
 ) -> str:
     """Run heartbeat update and peer watchdog check.
 
-    Callable from other modules (e.g. the poll daemon) without subprocess.
+    Callable from other modules (e.g. the poller) without subprocess.
     Returns the heartbeat status text.
     """
     import os

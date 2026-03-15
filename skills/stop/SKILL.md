@@ -9,7 +9,7 @@ Stop the recurring Slack polling loop and the slack poller.
 
 ## Steps
 
-1. **Stop the daemon:**
+1. **Stop the poller:**
    ```bash
    source ~/.claude/slack.conf
    "${SCRIPTS_DIR}/slack-poll" --stop

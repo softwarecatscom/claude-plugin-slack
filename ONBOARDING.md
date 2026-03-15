@@ -1,6 +1,6 @@
-# Agent Onboarding — Daemon-Based Polling
+# Agent Onboarding — Poller-Based Polling
 
-This guide gets a new or returning agent online with the daemon-based Slack monitoring system.
+This guide gets a new or returning agent online with the poller-based Slack monitoring system.
 
 ## Prerequisites
 
@@ -39,27 +39,27 @@ You should see debug output showing your identity, channel resolution, and API c
 ```
 
 This creates a `/loop 1m` cron that:
-1. Every minute, invokes the `daemon-loop` skill
-2. The skill checks if the daemon is running (singleton)
-3. If stopped: launches the daemon in the background
-4. The daemon polls every 60s, runs heartbeat, and only wakes you when there are messages
-5. If the daemon dies, the next cron tick restarts it
+1. Every 2 minutes, invokes the `daemon-loop` skill
+2. The skill checks if the poller is running (singleton)
+3. If stopped: launches the poller in the background
+4. The poller polls every 30s, runs heartbeat, and only wakes you when there are messages
+5. If the poller dies, the next cron tick restarts it
 
 ## How it works
 
-- **Idle**: daemon runs silently in background. Zero token cost except ~170 tokens/min for the cron tick checking status.
-- **Messages arrive**: daemon outputs enriched JSON (sender names resolved, thread context included) and exits. You get notified, process the messages, and the next cron tick re-launches the daemon.
-- **Heartbeat**: runs automatically inside the daemon every cycle. No separate heartbeat cron needed.
+- **Idle**: poller runs silently in background. Zero token cost except ~170 tokens/cycle for the cron tick checking status.
+- **Messages arrive**: poller outputs enriched JSON (sender names resolved, thread context included) and exits. You get notified, process the messages, and the next cron tick re-launches the poller.
+- **Heartbeat**: runs automatically inside the poller every cycle. No separate heartbeat cron needed.
 
 ## Troubleshooting
 
 ```bash
 source ~/.claude/slack.conf
 
-# Check daemon status
+# Check poller status
 "${SCRIPTS_DIR}/slack-poll" status
 
-# Stop the daemon
+# Stop the poller
 "${SCRIPTS_DIR}/slack-poll" stop
 
 # Run with debug output
@@ -76,8 +76,8 @@ source ~/.claude/slack.conf
 
 | Before | After |
 |--------|-------|
-| `scc-slack:read` skill loaded every minute (~4,500 tokens) | `daemon-loop` skill loaded every minute (~170 tokens) |
-| `slack-poll` bash script called by read skill | `slack-poll` Python daemon runs in background |
-| Agent did all filtering, name resolution, thread fetching | Daemon does it all, agent only evaluates and responds |
-| Heartbeat was a subprocess of slack-poll | Heartbeat runs inside the daemon |
+| `scc-slack:read` skill loaded every minute (~4,500 tokens) | `daemon-loop` skill loaded every 2 minutes (~170 tokens) |
+| `slack-poll` bash script called by read skill | `slack-poll` Python poller runs in background |
+| Agent did all filtering, name resolution, thread fetching | Poller does it all, agent only evaluates and responds |
+| Heartbeat was a subprocess of slack-poll | Heartbeat runs inside the poller |
 | SCRIPTS_DIR found via `find` pipeline every call | SCRIPTS_DIR stored in slack.conf, `source` once |

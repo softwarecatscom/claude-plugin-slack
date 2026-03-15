@@ -140,19 +140,19 @@ if __name__ == "__main__":
 - Load the Slack bot token from `$(dirname "$(which slack)")/.slack`
 - In Python: find the `slack` binary via `which`, then read `.slack` from its parent directory
 
-## Daemon Architecture
+## Poller Architecture
 
 The slack poller (`scripts/slack-poll.py`) is the **only** mechanism for agents to receive Slack events. There is no cron-based `slack-poll` alternative.
 
 ### How it works
-1. `/loop 1m` cron fires → invokes `daemon-loop` skill
-2. Skill checks daemon status (singleton via PID file) → launches if stopped via `Bash(run_in_background: true)`
-3. Daemon polls Slack every 60s internally — zero token cost while idle
+1. `/loop 2m` cron fires → invokes `daemon-loop` skill
+2. Skill checks poller status (singleton via PID file) → launches if stopped via `Bash(run_in_background: true)`
+3. Poller polls Slack every 30s internally — zero token cost while idle
 4. When actionable messages found: outputs enriched JSON and exits
-5. Agent processes messages via `read` skill → next cron tick re-launches daemon
+5. Agent processes messages via `read` skill → next cron tick re-launches poller
 
 ### Enriched Output
-The daemon pre-processes everything so the AI only handles judgment calls:
+The poller pre-processes everything so the AI only handles judgment calls:
 - **Sender names** pre-resolved (no API calls needed by agent)
 - **Thread context** pre-fetched for thread replies
 - **Mention tracking** auto-cleared for thread replies
@@ -161,10 +161,10 @@ The daemon pre-processes everything so the AI only handles judgment calls:
 - **Mention tracker tick** runs every cycle
 
 ### Token Efficiency
-- **Idle cycle**: ~170 tokens (daemon-loop skill only — checks status, does nothing)
-- **Active cycle**: ~727 tokens (daemon-loop + read skill)
-- Push ALL algorithmic work into the Python daemon. The AI skill should contain ONLY judgment calls and response composition.
-- When adding features, ask: "Can this run in the daemon instead of the skill?"
+- **Idle cycle**: ~170 tokens (poller-loop skill only — checks status, does nothing)
+- **Active cycle**: ~727 tokens (poller-loop + read skill)
+- Push ALL algorithmic work into the Python poller. The AI skill should contain ONLY judgment calls and response composition.
+- When adding features, ask: "Can this run in the poller instead of the skill?"
 
 ### Config
 All skills use `source ~/.claude/slack.conf` for SCRIPTS_DIR and channel config. Only the `setup` and `update` skills write SCRIPTS_DIR — all others read it.
