@@ -14,7 +14,7 @@ Start a 2-minute polling cycle that monitors configured Slack channels via the s
 Use `/loop 2m` to schedule this prompt as a recurring cron job:
 
 ```
-Check if the slack poller is running. Run: source ~/.claude/slack.conf && "${SCRIPTS_DIR}/slack-poll" status. If "stopped", launch it with Bash(command: "source ~/.claude/slack.conf && ${SCRIPTS_DIR}/slack-poll run", description: "slack-poll", run_in_background: true, timeout: 600000). If "running", do nothing and say nothing. When a background task completes, read the output and process the messages using the scc-slack:read skill.
+Check if the slack poller is running. Run: source ~/.claude/slack.conf && "${SCRIPTS_DIR}/slack-poll" status. If "stopped", launch it with Bash(command: "source ~/.claude/slack.conf && ${SCRIPTS_DIR}/slack-poll run", description: "slack-poll", run_in_background: true, timeout: 600000). If "running", do nothing and say nothing. When a background task completes, Read (not cat) the .output file, then follow the Agent Algorithm in the scc-slack:read skill to process the messages. Do NOT invoke /scc-slack:read as a polling mechanism — the poller handles polling.
 ```
 
 ## When the loop fires
