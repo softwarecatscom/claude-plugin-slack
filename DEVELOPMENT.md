@@ -42,8 +42,19 @@ Use native Python types — never import from `typing`. Add `from __future__ imp
 def fetch(items: list[dict], limit: int | None = None) -> dict[str, str]: ...
 
 # Bad — never use these
-from typing import Optional, List, Dict
+from typing import List, Dict
 def fetch(items: List[Dict], limit: Optional[int] = None) -> Dict[str, str]: ...
+```
+
+**Exception: Typer command signatures.** Typer does not support `type | None` syntax for optional arguments in `@app.command()` functions. Use `Optional[type]` there only, with a `# noqa: UP007` to suppress the ruff warning:
+
+```python
+from typing import Optional
+
+@app.command()
+def run(
+    interval: Optional[int] = typer.Option(None, ...),  # noqa: UP045
+) -> None: ...
 ```
 
 ### PEP 723 Inline Script Metadata
