@@ -33,6 +33,19 @@ Pre-commit runs automatically on `git commit`. Hooks include: shellcheck (bash),
 - **Existing simple scripts**: Keep as bash; don't rewrite unless major changes are needed
 - **Bash wrappers** are minimal: shebang, `set -euo pipefail`, `exec uv run --no-project script.py "$@"`
 
+### Python Type Annotations
+
+Use native Python types — never import from `typing`. Add `from __future__ import annotations` at the top of every file.
+
+```python
+# Good
+def fetch(items: list[dict], limit: int | None = None) -> dict[str, str]: ...
+
+# Bad — never use these
+from typing import Optional, List, Dict
+def fetch(items: List[Dict], limit: Optional[int] = None) -> Dict[str, str]: ...
+```
+
 ### PEP 723 Inline Script Metadata
 
 All Python scripts use [PEP 723](https://peps.python.org/pep-0723/) inline metadata for dependency declaration. This lets `uv run --no-project` install deps automatically without a virtualenv.
@@ -55,18 +68,35 @@ Python scripts with CLI arguments use [Typer](https://typer.tiangolo.com/) for a
 | `--verbose`, `-v` | Increase verbosity (repeatable: `-v`, `-vv`, `-vvv`) |
 | `--dry-run` | Run without side effects (skip writes, API mutations) |
 
+Shared options are defined in `scripts/slack_cli_options.py` and imported by all scripts:
+
+```python
+from slack_cli_options import COMMON_OPTIONS
+# COMMON_OPTIONS has: "verbose", "debug", "dry_run" — all with envvar support
+```
+
+Import with a sys.path insert (needed for PEP 723 `--no-project` scripts):
+
+```python
+import sys
+from pathlib import Path
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+from slack_cli_options import COMMON_OPTIONS
+```
+
 Example structure:
 
 ```python
 import typer
+from slack_cli_options import COMMON_OPTIONS
 
 app = typer.Typer(name="slack-example", add_completion=False)
 
 @app.command()
 def run(
-    verbose: int = typer.Option(0, "--verbose", "-v", count=True, help="Increase verbosity"),
-    debug: bool = typer.Option(False, "--debug", help="Enable debug output"),
-    dry_run: bool = typer.Option(False, "--dry-run", help="Dry run"),
+    verbose: int = COMMON_OPTIONS["verbose"],
+    debug: bool = COMMON_OPTIONS["debug"],
+    dry_run: bool = COMMON_OPTIONS["dry_run"],
 ) -> None:
     """Run the thing."""
 

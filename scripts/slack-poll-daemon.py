@@ -31,6 +31,9 @@ from pathlib import Path
 import httpx
 import typer
 
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+from slack_cli_options import COMMON_OPTIONS
+
 # --- Paths ---
 
 CONFIG_FILE = Path.home() / ".claude" / "slack.conf"
@@ -626,48 +629,46 @@ def status() -> None:
         typer.echo("stopped")
 
 
-@app.command()
-def once(
-    verbose: int = typer.Option(0, "--verbose", "-v", count=True, help="Increase verbosity"),
-    debug: bool = typer.Option(False, "--debug", help="Enable debug output"),
-    dry_run: bool = typer.Option(False, "--dry-run", help="Poll but skip heartbeat/mention tracker"),
-) -> None:
-    """Run a single poll cycle (for testing)."""
+def _apply_globals(verbose: int, debug: bool) -> None:
+    """Set global verbosity and debug flags."""
     global _verbose, _debug  # noqa: PLW0603
     _verbose = verbose
     _debug = debug
 
+
+@app.command()
+def once(
+    verbose: int = COMMON_OPTIONS["verbose"],
+    debug: bool = COMMON_OPTIONS["debug"],
+    dry_run: bool = COMMON_OPTIONS["dry_run"],
+) -> None:
+    """Run a single poll cycle (for testing)."""
+    _apply_globals(verbose, debug)
     _run_daemon(once=True, dry_run=dry_run)
 
 
 @app.command()
 def run(
-    verbose: int = typer.Option(0, "--verbose", "-v", count=True, help="Increase verbosity"),
-    debug: bool = typer.Option(False, "--debug", help="Enable debug output"),
-    dry_run: bool = typer.Option(False, "--dry-run", help="Poll but skip heartbeat/mention tracker"),
+    verbose: int = COMMON_OPTIONS["verbose"],
+    debug: bool = COMMON_OPTIONS["debug"],
+    dry_run: bool = COMMON_OPTIONS["dry_run"],
     interval: int | None = typer.Option(None, "--interval", "-i", help="Poll interval in seconds"),
 ) -> None:
     """Run daemon until actionable messages found (default command)."""
-    global _verbose, _debug  # noqa: PLW0603
-    _verbose = verbose
-    _debug = debug
-
+    _apply_globals(verbose, debug)
     _run_daemon(once=False, dry_run=dry_run, interval_override=interval)
 
 
 @app.callback(invoke_without_command=True)
 def main(
     ctx: typer.Context,
-    verbose: int = typer.Option(0, "--verbose", "-v", count=True, help="Increase verbosity"),
-    debug: bool = typer.Option(False, "--debug", help="Enable debug output"),
-    dry_run: bool = typer.Option(False, "--dry-run", help="Poll but skip heartbeat/mention tracker"),
+    verbose: int = COMMON_OPTIONS["verbose"],
+    debug: bool = COMMON_OPTIONS["debug"],
+    dry_run: bool = COMMON_OPTIONS["dry_run"],
     interval: int | None = typer.Option(None, "--interval", "-i", help="Poll interval in seconds"),
 ) -> None:
     """Long-poll daemon for Slack monitoring."""
-    global _verbose, _debug  # noqa: PLW0603
-    _verbose = verbose
-    _debug = debug
-
+    _apply_globals(verbose, debug)
     if ctx.invoked_subcommand is None:
         _run_daemon(once=False, dry_run=dry_run, interval_override=interval)
 
