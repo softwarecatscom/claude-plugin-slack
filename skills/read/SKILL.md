@@ -1,11 +1,11 @@
 ---
 name: read
-description: Read new Slack messages from a channel. Use when the user says "check slack", "read slack", "any slack messages", or wants to see recent channel messages.
+description: Process Slack messages from the daemon. Use when the daemon-loop skill wakes you with actionable messages, or when the user says "check slack", "read slack", "any slack messages".
 ---
 
 # Read Slack Messages
 
-Read new messages from a Slack channel, identify messages that need your attention, and act on them.
+Process actionable messages from the Slack poll daemon, identify what needs your attention, and act on them.
 
 ## Arguments
 
@@ -20,7 +20,7 @@ SCRIPTS_DIR=$(find ~/.claude/plugins/cache -path "*/scc-slack/*/scripts/slack-id
 
 **ALWAYS use the `scripts/slack-*` helpers for Slack operations.** Do NOT call the Slack API directly with curl. The scripts handle token loading, channel resolution, mention encoding (`@here` → `<!here>`, `@Name` → `<@USERID>`), and JSON payload construction correctly. Calling the API directly bypasses this and introduces bugs (e.g., Claude Code's Bash tool escapes `!` in `<!here>`, breaking broadcast mentions). If a script doesn't exist for what you need, add one — don't inline curl calls.
 
-**Prefer `ctx_execute` over Bash** when running scripts that produce output (polls, identity, resolve, mention tracker). This keeps raw output in the sandbox and protects your context window. Only use Bash for the `SCRIPTS_DIR` setup above, `eval` commands that set shell variables, and side-effect commands with minimal output (`slack-send`, `slack-react`).
+**Prefer `ctx_execute` over Bash** when running scripts that produce output (resolve, mention tracker, thread reads). This keeps raw output in the sandbox and protects your context window. Only use Bash for the `SCRIPTS_DIR` setup above, `eval` commands that set shell variables, and side-effect commands with minimal output (`slack-send`, `slack-react`).
 
 ## Steps
 
@@ -40,44 +40,22 @@ eval "$("${SCRIPTS_DIR}/slack-identity")"
 
 This sets `USER_ID`, `USERNAME`, `DISPLAY_NAME`, and `REAL_NAME`. Keep these for the rest of the session.
 
-### Step 3: Poll for actionable messages
+### Step 3: Get actionable messages
 
-**ALWAYS use `slack-poll`** — it handles channel resolution, cursor-based fetching, mention filtering, AND thread scanning in one call.
+Messages come from the daemon via `scc-slack:daemon-loop`. The daemon output contains `# channel=NAME id=ID` headers followed by JSON arrays of filtered messages, plus `# thread=TS channel=ID` sections for threads.
 
-Run via `ctx_execute` to keep the JSON output out of your context window:
-```bash
-"${SCRIPTS_DIR}/slack-poll"
-```
-
-The output contains `# channel=NAME id=ID` headers followed by JSON arrays of filtered messages, plus `# thread=TS channel=ID` sections for threads you participate in. Parse each JSON array block for actionable messages.
-
-Each message entry has `ts`, `user`, `text`, `match_type`, `bot_id`, and `thread_ts`. Match types include:
+Each message entry has `ts`, `user`, `text`, `match_type`, `bot_id`, and `thread_ts`. Match types:
 - `direct` — you were @mentioned
 - `broadcast` — @here/@channel/@everyone
-- `name_match` — your name appeared in the text
-- `thread_participant` — new reply in a thread you're part of (not explicitly @mentioned, but you're a participant — treat as actionable)
+- `name` — your name appeared in the text
+- `thread_participant` — new reply in a thread you're part of (treat as actionable)
 
-**If all arrays are empty** (`[]`), run the mention tracker tick (step 3b) and then stop. Say nothing — do not report "no new messages." The cursor was already auto-advanced by `slack-poll`.
-
-### Step 3b: Check for unresponsive @mentions
-
-After polling, tick the mention tracker to check if any @mentioned agents haven't responded. Run via `ctx_execute`:
-
+If invoked manually (not from the daemon), run a single poll cycle via `ctx_execute`:
 ```bash
-"${SCRIPTS_DIR}/slack-mention-tracker" tick
+"${SCRIPTS_DIR}/slack-poll-daemon" --once
 ```
 
-If `EXPIRED` is not `[]`, it contains entries for agents who haven't responded after 5 poll cycles (~5 minutes). For **each** expired entry, post a thread reference in the main channel so the request gains visibility:
-
-```bash
-# Build Slack deep link: remove dot from thread_ts
-LINK="https://slack.com/archives/${ENTRY_CHANNEL}/p${THREAD_TS_WITHOUT_DOT}"
-"${SCRIPTS_DIR}/slack-send" "${CHANNEL}" "Thread needs attention — @MentionedAgent hasn't responded in ~5 min: ${LINK}"
-```
-
-Replace the dot in `thread_ts` to form the deep link (e.g., `1773461177.560699` → `p1773461177560699`). Resolve the mentioned user ID to a display name before posting.
-
-This only fires once per tracked mention — the tracker marks it as alerted after the first escalation.
+**If no messages (empty output or all `[]` arrays):** stop. Say nothing — do not report "no new messages."
 
 ### Step 4: Process each action message
 
@@ -98,6 +76,11 @@ Replace `<!here>`, `<!channel>`, `<!everyone>` with `@here`, `@channel`, `@every
 ```
 
 This is safe to call even if the sender isn't tracked — the script is a no-op in that case.
+
+**a3) Read thread context if needed.** If `thread_ts` is set, fetch the full thread via `ctx_execute` to understand what you're replying to:
+```bash
+"${SCRIPTS_DIR}/slack-thread" "${CHANNEL}" "${THREAD_TS}"
+```
 
 **b) Check for conversation closure.** Before acting, determine if this message is a **new request** or a **conversation closure**. This prevents infinite ping-pong between agents.
 
@@ -185,7 +168,7 @@ Keep responses concise — summary and key details, not a wall of text.
 "${SCRIPTS_DIR}/slack-mention-tracker" add "${CHANNEL}" "${THREAD_TS}" "${MENTIONED_USER_ID}"
 ```
 
-This starts the 5-cycle countdown. If the mentioned agent responds in the thread within 5 poll cycles, the tracker is automatically cleared (see step 4a2). If not, step 3b will escalate it to the main channel.
+This starts the 5-cycle countdown. If the mentioned agent responds in the thread within 5 poll cycles, the tracker is automatically cleared (see step 4a2). If not, the daemon will escalate it.
 
 Only track mentions to **other agents** — do not track mentions to humans or to yourself.
 
@@ -201,9 +184,7 @@ Do **not** advance to the next message until all detected commitments are resolv
 
 ### Done
 
-The cursor is auto-advanced by `slack-poll` (step 3) — you do NOT need to update it manually. `slack-poll` writes the newest fetched message timestamp to the cursor immediately after a successful API call. This prevents the race condition where agents accidentally advance the cursor to their reply's timestamp, skipping messages that arrived between fetch and reply.
-
-**Heartbeat is handled automatically** — `slack-poll` runs `slack-heartbeat` at the end of each cycle. Do NOT create a separate cron job for `/heartbeat`.
+Cursors, heartbeat, and mention tracker ticks are all handled by the daemon — you do NOT need to manage them manually.
 
 ## When to escalate
 

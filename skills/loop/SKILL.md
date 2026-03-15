@@ -5,7 +5,7 @@ description: Start a /loop 1m polling cycle for Slack channels. Use when the use
 
 # Slack Loop
 
-Start a 1-minute polling cycle that monitors configured Slack channels.
+Start a 1-minute polling cycle that monitors configured Slack channels via the long-poll daemon. The daemon runs in the background and only wakes the agent when actionable messages arrive.
 
 **Announce at start:** "Starting Slack polling loop (1m interval)."
 
@@ -14,33 +14,16 @@ Start a 1-minute polling cycle that monitors configured Slack channels.
 Use `/loop 1m` to schedule this prompt as a recurring cron job:
 
 ```
-Use the `scc-slack:read` skill to check for new messages in Slack.
+Use the `scc-slack:daemon-loop` skill to check for new messages in Slack.
 ```
 
-## Mode selection
+## When the loop fires
 
-When the loop fires, check `SLACK_POLL_DAEMON` in `~/.claude/slack.conf`:
+Each minute, the cron invokes `scc-slack:daemon-loop`. That skill checks if the daemon is already running — if yes, does nothing (zero cost). If the daemon stopped (it exits when it finds messages, or crashed), the skill re-launches it.
 
-- **`SLACK_POLL_DAEMON=1`**: Use the `scc-slack:daemon-loop` skill. It checks if the daemon is already running (singleton) — if yes, does nothing; if no, launches it in the background. The daemon handles polling internally and only wakes the agent when actionable messages arrive. **~98% token reduction.**
-- **Unset or `0` (default)**: Use the `scc-slack:read` skill, which handles everything: fetching, filtering, evaluating, acting, and replying.
+The daemon handles polling, filtering, heartbeat, and mention tracker internally. The agent only gets involved when there are actionable messages to process.
 
-If there are no new messages, stay completely silent. Do not report that nothing happened.
-
-## Pipeline reference
-
-The read skill uses `slack-poll` under the hood. You do NOT need to call it directly — the read skill handles it. This is here for reference only:
-
-```bash
-# Locate scripts
-SCRIPTS_DIR=$(find ~/.claude/plugins/cache -path "*/scc-slack/*/scripts/slack-identity" 2>/dev/null | sort -V | tail -1 | xargs dirname)
-
-# Poll all configured channels (reads AUTONOMOUS_CHANNELS from ~/.claude/slack.conf)
-"${SCRIPTS_DIR}/slack-poll"
-```
-
-**IMPORTANT:** Always use `slack-poll` via `ctx_execute` — it handles channel resolution, cursor management, mention filtering, AND thread scanning in one call. It also runs the heartbeat automatically at the end of each cycle. Using `ctx_execute` keeps the JSON output in the sandbox and protects your context window.
-
-**DO NOT create a separate cron job for `/heartbeat`.** Heartbeat is built into `slack-poll` — if you are polling, you are heartbeating. A single polling cron is all you need.
+**DO NOT create a separate cron job for `/heartbeat`.** Heartbeat is built into the daemon — if you are polling, you are heartbeating.
 
 ## Stopping
 

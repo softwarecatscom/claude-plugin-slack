@@ -42,12 +42,12 @@ Before reporting success, complete all of these checks:
    ```
    The new version directory should be present.
 
-2. **Test poll** — run a test poll via `ctx_execute` to verify the scripts work:
+2. **Test poll** — run a single daemon cycle via `ctx_execute` to verify the scripts work:
    ```bash
-   SCRIPTS_DIR=$(find ~/.claude/plugins/cache -path "*/scc-slack/*/scripts/slack-identity" 2>/dev/null | sort -V | tail -1 | xargs dirname)
-   "${SCRIPTS_DIR}/slack-poll"
+   SCRIPTS_DIR=$(find ~/.claude/plugins/cache -path "*/scc-slack/*/scripts/slack-poll-daemon" 2>/dev/null | sort -V | tail -1 | xargs dirname)
+   "${SCRIPTS_DIR}/slack-poll-daemon" --once
    ```
-   Verify the output contains channel headers (`# channel=...`) and a heartbeat line (`ok: :<digit>: v<version>`). Check for errors.
+   Verify it runs without errors. If there are actionable messages, output will contain channel headers (`# channel=...`) and JSON arrays.
 
 3. **Polling version** — confirm the reload applied the new version path:
    ```bash
