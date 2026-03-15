@@ -55,6 +55,23 @@ class SlackClient:
             except Exception as exc2:
                 return {"ok": False, "error": str(exc2)}
 
+    def post(self, method: str, data: dict) -> dict:
+        """Call a Slack API method via POST with JSON body and proxy fallback."""
+        url = f"{self.base_url}/api/{method}"
+        try:
+            resp = self._client.post(url, json=data)
+            return resp.json()
+        except (httpx.ConnectError, httpx.ConnectTimeout, httpx.ReadTimeout) as exc:
+            if not self.using_proxy:
+                return {"ok": False, "error": str(exc)}
+            self._fallback_warn(str(exc))
+            try:
+                url = f"{self.direct_url}/api/{method}"
+                resp = self._client.post(url, json=data)
+                return resp.json()
+            except Exception as exc2:
+                return {"ok": False, "error": str(exc2)}
+
     def _fallback_warn(self, reason: str) -> None:
         """Emit a proxy fallback warning with 10-minute cooldown."""
         now = time.time()
