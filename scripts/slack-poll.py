@@ -534,13 +534,13 @@ def _poll_channel(client: SlackClient, channel_name: str, identity: dict) -> lis
         )
     )
 
-    # Advance cursors
+    # Collect cursor updates (written later by poll_cycle)
+    pending_cursors: dict[str, str] = {}
     if messages:
         newest_ts = messages[0].get("ts", "")
         if newest_ts:
-            write_cursor(CURSOR_FILE, channel_id, newest_ts)
+            pending_cursors["channel"] = newest_ts
 
-    # Advance thread cursor across ALL scanned threads (participating + non-participating)
     newest_thread_ts = ""
     for parent in [*participating, *non_participating]:
         for msg in thread_messages:
@@ -548,9 +548,9 @@ def _poll_channel(client: SlackClient, channel_name: str, identity: dict) -> lis
                 newest_thread_ts = max(newest_thread_ts, msg.get("latest_reply", ""))
                 break
     if newest_thread_ts:
-        write_cursor(THREAD_CURSOR_FILE, channel_id, newest_thread_ts)
+        pending_cursors["thread"] = newest_thread_ts
 
-    return actionable
+    return actionable, channel_id, pending_cursors
 
 
 def _run_subprocess(cmd: list[str], timeout: int = 30) -> None:
@@ -569,10 +569,22 @@ def poll_cycle(
 ) -> str:
     """Run one poll cycle. Returns enriched JSON if actionable, empty if quiet."""
     all_actionable: list[dict] = []
+    all_cursors: list[tuple[str, dict[str, str]]] = []
     for channel in channels:
         stripped = channel.strip()
         if stripped:
-            all_actionable.extend(_poll_channel(client, stripped, identity))
+            actionable, channel_id, pending_cursors = _poll_channel(client, stripped, identity)
+            all_actionable.extend(actionable)
+            all_cursors.append((channel_id, pending_cursors))
+
+    # Always advance cursors — the daemon guarantees delivery via stdout.
+    # In run mode: output goes to background task, agent reads it.
+    # In once mode: output goes to stdout, caller must consume it.
+    for channel_id, cursors in all_cursors:
+        if "channel" in cursors:
+            write_cursor(CURSOR_FILE, channel_id, cursors["channel"])
+        if "thread" in cursors:
+            write_cursor(THREAD_CURSOR_FILE, channel_id, cursors["thread"])
 
     if scripts_dir and not dry_run:
         _run_subprocess([str(scripts_dir / "slack-heartbeat")], timeout=30)
