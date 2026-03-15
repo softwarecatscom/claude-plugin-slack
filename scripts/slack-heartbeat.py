@@ -17,7 +17,6 @@ Format: :<digit_name>: v<scc-slack-version> [| Maintenance <ISO> [for <duration>
 
 from __future__ import annotations
 
-import os
 import re
 import subprocess
 import sys
@@ -367,8 +366,9 @@ def run_heartbeat(
     Callable from other modules (e.g. the poll daemon) without subprocess.
     Returns the heartbeat status text.
     """
+    config = load_config()
     token = load_token()
-    client = SlackClient(token, proxy_url=os.environ.get("SLACK_PROXY_URL"))
+    client = SlackClient(token, proxy_url=config.get("SLACK_PROXY_URL"))
     try:
         identity = load_identity(client.get)
         user_id = identity["USER_ID"]
