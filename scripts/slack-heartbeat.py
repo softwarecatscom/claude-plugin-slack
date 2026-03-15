@@ -463,20 +463,27 @@ def _send_alerts(stale: list[str], outdated: list[str], channel_id: str, recent_
             )
 
 
-def main() -> None:
-    """Run heartbeat update and peer watchdog check."""
+def run_heartbeat(
+    channel_id: str | None = None,
+    maintenance: bool = False,
+    duration: str | None = None,
+) -> str:
+    """Run heartbeat update and peer watchdog check.
+
+    Callable from other modules (e.g. the poll daemon) without subprocess.
+    Returns the heartbeat status text.
+    """
     token = load_token()
     user_id = load_identity(token)
 
-    channel_id_arg, maintenance, duration = parse_args(sys.argv)
-    channel_id = _resolve_channel_id(channel_id_arg, token)
+    resolved_channel = _resolve_channel_id(channel_id, token)
 
     _digit, _emoji, heartbeat_text = calculate_heartbeat(maintenance, duration)
 
     # Load cached config and bootstrap thread/message
     conf = load_conf(CONFIG_FILE)
-    thread_ts = _bootstrap_thread(token, channel_id, conf)
-    msg_ts = _bootstrap_message(token, channel_id, thread_ts, user_id, conf, heartbeat_text)
+    thread_ts = _bootstrap_thread(token, resolved_channel, conf)
+    msg_ts = _bootstrap_message(token, resolved_channel, thread_ts, user_id, conf, heartbeat_text)
 
     # Save config
     save_conf(
@@ -488,19 +495,26 @@ def main() -> None:
     )
 
     # Update own heartbeat message
-    _update_heartbeat(token, channel_id, heartbeat_text, msg_ts)
+    _update_heartbeat(token, resolved_channel, heartbeat_text, msg_ts)
 
     # --- Watchdog: check peers ---
-    bot_msgs = _collect_peer_messages(token, channel_id, thread_ts, user_id)
+    bot_msgs = _collect_peer_messages(token, resolved_channel, thread_ts, user_id)
     stale, outdated = _check_peers(bot_msgs, _digit, heartbeat_text)
 
     # Dedup and send alerts
     recent_alerts: list[str] = []
     if stale or outdated:
-        recent_alerts = _fetch_recent_alerts(token, channel_id)
-    _send_alerts(stale, outdated, channel_id, recent_alerts)
+        recent_alerts = _fetch_recent_alerts(token, resolved_channel)
+    _send_alerts(stale, outdated, resolved_channel, recent_alerts)
 
-    print(f"ok: {heartbeat_text}")
+    return heartbeat_text
+
+
+def main() -> None:
+    """CLI entry point — parses args and calls run_heartbeat."""
+    channel_id_arg, maintenance, duration = parse_args(sys.argv)
+    result = run_heartbeat(channel_id_arg, maintenance, duration)
+    print(f"ok: {result}")
 
 
 if __name__ == "__main__":

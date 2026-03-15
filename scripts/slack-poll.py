@@ -17,12 +17,12 @@ from __future__ import annotations
 
 import atexit
 import contextlib
+import importlib
 import json
 import os
 import re
 import shutil
 import signal
-import subprocess
 import sys
 import time
 from pathlib import Path
@@ -32,16 +32,19 @@ import httpx
 import typer
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
+from scc_slack.identity import load_identity
 from slack_cli_options import COMMON_OPTIONS
+
+# Import sibling modules (hyphenated names need importlib)
+_heartbeat_mod = importlib.import_module("slack-heartbeat")
+_mention_tracker_mod = importlib.import_module("slack-mention-tracker")
 
 # --- Paths ---
 
 CONFIG_FILE = Path.home() / ".claude" / "slack.conf"
-IDENTITY_FILE = Path.home() / ".claude" / "slack-cache" / "identity"
 SEEN_FILE = Path.home() / ".claude" / "slack-seen.json"
 CHANNEL_CACHE = Path.home() / ".claude" / "slack-cache" / "channels"
 USER_CACHE = Path.home() / ".claude" / "slack-cache" / "users"
-MENTION_TRACKER_STATE = Path.home() / ".claude" / "slack-mention-tracker.json"
 PID_FILE = Path.home() / ".claude" / "slack-poll.pid"
 FALLBACK_STATE_FILE = Path.home() / ".claude" / "slack-proxy-fallback-alerted"
 
@@ -133,25 +136,6 @@ def load_config() -> dict[str, str]:
     return _parse_key_value_file(CONFIG_FILE)
 
 
-def load_identity() -> dict[str, str]:
-    """Load identity from ~/.claude/slack-cache/identity."""
-    if not IDENTITY_FILE.exists():
-        scripts_dir = _find_scripts_dir()
-        if scripts_dir:
-            subprocess.run(  # noqa: S603
-                [str(scripts_dir / "slack-identity")],
-                capture_output=True,
-                timeout=30,
-                check=False,
-            )
-    if not IDENTITY_FILE.exists():
-        typer.echo("ERROR: No identity cached.", err=True)
-        raise typer.Exit(code=1)
-    identity = _parse_key_value_file(IDENTITY_FILE)
-    _debug_log(f"Identity: {identity.get('REAL_NAME', '?')} ({identity.get('USER_ID', '?')})")
-    return identity
-
-
 def load_token() -> str:
     """Load Slack token from slack-cli's .slack file."""
     slack_bin = shutil.which("slack")
@@ -163,14 +147,6 @@ def load_token() -> str:
         typer.echo("ERROR: No Slack token found.", err=True)
         raise typer.Exit(code=1)
     return token_file.read_text().strip()
-
-
-def _find_scripts_dir() -> Path | None:
-    """Find the scripts directory (this script's parent)."""
-    scripts_dir = Path(__file__).resolve().parent
-    if (scripts_dir / "slack-identity").exists():
-        return scripts_dir
-    return None
 
 
 # --- HTTP client with proxy fallback ---
@@ -270,26 +246,6 @@ def resolve_user(client: SlackClient, user_id: str) -> str:
             f.write(f"{user_id}={name}\n")
         return name
     return "unknown"
-
-
-# --- Mention tracker (inline) ---
-
-
-def mention_tracker_responded(channel: str, thread_ts: str, user_id: str) -> None:
-    """Clear a tracked @mention (agent responded). No-op if not tracked."""
-    if not MENTION_TRACKER_STATE.exists():
-        return
-    try:
-        state = json.loads(MENTION_TRACKER_STATE.read_text())
-    except (json.JSONDecodeError, ValueError):
-        return
-    new_state = [
-        e
-        for e in state
-        if not (e.get("channel") == channel and e.get("thread_ts") == thread_ts and e.get("user_id") == user_id)
-    ]
-    if len(new_state) != len(state):
-        MENTION_TRACKER_STATE.write_text(json.dumps(new_state, indent=2))
 
 
 # --- Seen set ---
@@ -451,7 +407,7 @@ def _scan_threads(
                 msg["channel_id"] = channel_id
                 msg["thread_context"] = thread_ctx
                 if participating:
-                    mention_tracker_responded(channel_id, parent_ts, msg.get("user", ""))
+                    _mention_tracker_mod.responded(channel_id, parent_ts, msg.get("user", ""))
             results.extend(matches)
     return results
 
@@ -515,17 +471,10 @@ def _poll_channel(client: SlackClient, channel_name: str, identity: dict, seen: 
     return actionable
 
 
-def _run_subprocess(cmd: list[str], timeout: int = 30) -> None:
-    """Run a subprocess, suppressing errors."""
-    with contextlib.suppress(subprocess.TimeoutExpired, FileNotFoundError, OSError):
-        subprocess.run(cmd, capture_output=True, timeout=timeout, check=False)  # noqa: S603
-
-
 def poll_cycle(
     client: SlackClient,
     channels: list[str],
     identity: dict,
-    scripts_dir: Path | None,
     *,
     dry_run: bool = False,
 ) -> str:
@@ -542,9 +491,11 @@ def poll_cycle(
         seen[msg["ts"]] = msg.get("thread_ts")
     save_seen(seen)
 
-    if scripts_dir and not dry_run:
-        _run_subprocess([str(scripts_dir / "slack-heartbeat")], timeout=30)
-        _run_subprocess([str(scripts_dir / "slack-mention-tracker"), "tick"], timeout=10)
+    if not dry_run:
+        with contextlib.suppress(Exception):
+            _heartbeat_mod.run_heartbeat()
+        with contextlib.suppress(Exception):
+            _mention_tracker_mod.tick()
     elif dry_run:
         _log("DRY RUN: skipping heartbeat and mention tracker", level=0)
 
@@ -680,15 +631,14 @@ def _run_daemon(*, once: bool = False, dry_run: bool = False, interval_override:
         _log("DRY RUN mode enabled", level=0)
 
     token = load_token()
-    identity = load_identity()
-    scripts_dir = _find_scripts_dir()
-
     client = SlackClient(token, proxy_url)
+    identity = load_identity(api_get=client.get)
+    _debug_log(f"Identity: {identity.get('REAL_NAME', '?')} ({identity.get('USER_ID', '?')})")
 
     try:
         while not _shutdown:
             try:
-                output = poll_cycle(client, channels, identity, scripts_dir, dry_run=dry_run)
+                output = poll_cycle(client, channels, identity, dry_run=dry_run)
             except Exception as exc:
                 _log(f"ERROR: Poll cycle failed: {exc}", level=0)
                 output = ""
