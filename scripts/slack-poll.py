@@ -427,6 +427,7 @@ def _run_poller(
 
             if output:
                 typer.echo(output)
+                typer.echo("\nUse the `scc-slack:read` skill to process these messages.")
                 sys.stdout.flush()
                 break
 

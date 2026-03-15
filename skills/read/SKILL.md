@@ -1,19 +1,26 @@
 ---
 name: read
-description: Process Slack messages from the poller. Use when the poller wakes you with actionable messages, or when the user says "check slack", "read slack".
+description: Process Slack messages. Launches the poller if not running, processes output when it exits. Use when the loop cron fires, or when the user says "check slack", "read slack".
 ---
 
 # Read Slack Messages
-
-Process actionable messages from the slack poller.
 
 ```bash
 source ~/.claude/slack.conf
 ```
 
-Use `scripts/slack-*` helpers for Slack operations. Prefer `ctx_execute` for scripts that produce output.
+## Launch the poller
 
-## Input
+```
+Bash(command: "source ~/.claude/slack.conf && ${SCRIPTS_DIR}/slack-poll run", description: "slack-poll", run_in_background: true, timeout: 600000)
+```
+
+## What to expect
+
+- **Poller already running**: The poller rejects the duplicate and exits silently. No action needed.
+- **Poller exited with messages (exit 0)**: You receive a background task notification. Read (not cat) the .output file and show its path. Then follow the Agent Algorithm below.
+
+## Input format
 
 The poller outputs a JSON array of enriched messages. Each message has:
 - `channel`, `channel_id` — where it happened
@@ -24,11 +31,9 @@ The poller outputs a JSON array of enriched messages. Each message has:
 
 Sender names are pre-resolved. Mention tracking for thread replies is auto-cleared.
 
-If invoked manually (not from poller): `"${SCRIPTS_DIR}/slack-poll" once --dry-run`
-
 ## Agent Algorithm
 
-1. **Read** (not cat) the poller output and show the path of the .output file of the background task
+1. **Read** (not cat) the poller output and show the path of the .output file
 2. **Scan the actionables** — check for conversation closure, classify, don't skip blindly
 3. **Exclude conversation closures** — build the actionable list and note the count
 4. **For each actionable message do the following:**
