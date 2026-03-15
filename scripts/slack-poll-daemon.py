@@ -20,6 +20,10 @@ and thread context included. The agent receives everything needed to evaluate
 and respond without additional API calls.
 """
 
+from __future__ import annotations
+
+import atexit
+import contextlib
 import json
 import os
 import re
@@ -54,13 +58,20 @@ THREAD_HISTORY_LIMIT = 50
 MAX_THREADS = 5
 FALLBACK_COOLDOWN = 600  # 10 minutes
 
+BROADCAST_RE = re.compile(
+    r"<!here>|<!channel>|<!everyone>"
+    r"|(^|\s)@here(\s|$)"
+    r"|(^|\s)@channel(\s|$)"
+    r"|(^|\s)@everyone(\s|$)",
+)
+
 # --- Shutdown ---
 
 _shutdown = False
 
 
-def _handle_signal(signum, frame):
-    global _shutdown
+def _handle_signal(_signum: int, _frame: object) -> None:
+    global _shutdown  # noqa: PLW0603
     _shutdown = True
 
 
@@ -71,42 +82,44 @@ signal.signal(signal.SIGINT, _handle_signal)
 # --- Config ---
 
 
-def load_config() -> dict:
+def _parse_key_value_file(path: Path) -> dict[str, str]:
+    """Parse a KEY=VALUE file, stripping quotes and comments."""
+    result: dict[str, str] = {}
+    if not path.exists():
+        return result
+    for raw_line in path.read_text().splitlines():
+        stripped = raw_line.strip()
+        if not stripped or stripped.startswith("#"):
+            continue
+        if "=" in stripped:
+            key, _, value = stripped.partition("=")
+            result[key.strip()] = value.strip().strip('"').strip("'")
+    return result
+
+
+def load_config() -> dict[str, str]:
     """Load key=value config from slack.conf."""
-    config = {}
     if not CONFIG_FILE.exists():
         print(f"ERROR: No config at {CONFIG_FILE}", file=sys.stderr)
         sys.exit(1)
-    for line in CONFIG_FILE.read_text().splitlines():
-        line = line.strip()
-        if not line or line.startswith("#"):
-            continue
-        if "=" in line:
-            key, _, value = line.partition("=")
-            config[key.strip()] = value.strip().strip('"').strip("'")
-    return config
+    return _parse_key_value_file(CONFIG_FILE)
 
 
-def load_identity() -> dict:
+def load_identity() -> dict[str, str]:
     """Load identity from ~/.claude/slack-cache/identity."""
     if not IDENTITY_FILE.exists():
         scripts_dir = _find_scripts_dir()
         if scripts_dir:
-            subprocess.run(
+            subprocess.run(  # noqa: S603
                 [str(scripts_dir / "slack-identity")],
                 capture_output=True,
                 timeout=30,
+                check=False,
             )
     if not IDENTITY_FILE.exists():
         print("ERROR: No identity cached.", file=sys.stderr)
         sys.exit(1)
-    identity = {}
-    for line in IDENTITY_FILE.read_text().splitlines():
-        line = line.strip()
-        if "=" in line:
-            key, _, value = line.partition("=")
-            identity[key.strip()] = value.strip().strip('"')
-    return identity
+    return _parse_key_value_file(IDENTITY_FILE)
 
 
 def load_token() -> str:
@@ -136,8 +149,7 @@ def _find_scripts_dir() -> Path | None:
 class SlackClient:
     """HTTP client for Slack API with proxy fallback."""
 
-    def __init__(self, token: str, proxy_url: str | None = None):
-        self.token = token
+    def __init__(self, token: str, proxy_url: str | None = None) -> None:
         self.base_url = proxy_url or "https://slack.com"
         self.direct_url = "https://slack.com"
         self.using_proxy = self.base_url != self.direct_url
@@ -164,80 +176,68 @@ class SlackClient:
             except Exception as exc2:
                 return {"ok": False, "error": str(exc2)}
 
-    def _fallback_warn(self, reason: str):
+    def _fallback_warn(self, reason: str) -> None:
         """Emit a proxy fallback warning with 10-minute cooldown."""
         now = time.time()
         if now - self._last_fallback_warn < FALLBACK_COOLDOWN:
             return
         self._last_fallback_warn = now
         print(
-            f"WARN: Proxy {self.base_url} unreachable ({reason}), "
-            f"falling back to direct Slack",
+            f"WARN: Proxy {self.base_url} unreachable ({reason}), falling back to direct Slack",
             file=sys.stderr,
         )
         FALLBACK_STATE_FILE.parent.mkdir(parents=True, exist_ok=True)
         FALLBACK_STATE_FILE.write_text(str(int(now)))
 
-    def close(self):
+    def close(self) -> None:
+        """Close the HTTP client."""
         self._client.close()
 
 
-# --- Channel resolution ---
+# --- Resolution helpers ---
 
 
 def resolve_channel(client: SlackClient, name: str) -> str | None:
     """Resolve a channel name to an ID, using cache."""
     if re.match(r"^C[A-Z0-9]+$", name):
         return name
-    # Check cache
     if CHANNEL_CACHE.exists():
         for line in CHANNEL_CACHE.read_text().splitlines():
             if "=" in line:
                 cached_id, _, cached_name = line.partition("=")
                 if cached_name.lower() == name.lower():
                     return cached_id
-    # API call
     resp = client.get(
         "conversations.list",
         {"types": "public_channel,private_channel", "limit": "200"},
     )
-    if resp.get("ok"):
-        CHANNEL_CACHE.parent.mkdir(parents=True, exist_ok=True)
-        lines = []
-        found = None
-        for ch in resp.get("channels", []):
-            lines.append(f"{ch['id']}={ch['name']}")
-            if ch["name"].lower() == name.lower():
-                found = ch["id"]
-        CHANNEL_CACHE.write_text("\n".join(lines) + "\n")
-        return found
-    return None
-
-
-# --- User resolution ---
+    if not resp.get("ok"):
+        return None
+    CHANNEL_CACHE.parent.mkdir(parents=True, exist_ok=True)
+    lines = []
+    found = None
+    for ch in resp.get("channels", []):
+        lines.append(f"{ch['id']}={ch['name']}")
+        if ch["name"].lower() == name.lower():
+            found = ch["id"]
+    CHANNEL_CACHE.write_text("\n".join(lines) + "\n")
+    return found
 
 
 def resolve_user(client: SlackClient, user_id: str) -> str:
     """Resolve a user ID to display name, using cache."""
     if not user_id:
         return "unknown"
-    # Check cache
     if USER_CACHE.exists():
         for line in USER_CACHE.read_text().splitlines():
             if line.startswith(f"{user_id}="):
                 return line.split("=", 1)[1]
-    # API call
     resp = client.get("users.info", {"user": user_id})
     if resp.get("ok"):
         profile = resp.get("user", {}).get("profile", {})
-        name = (
-            profile.get("display_name")
-            or profile.get("real_name")
-            or resp.get("user", {}).get("name", "unknown")
-        )
-        # Append to cache
+        name = profile.get("display_name") or profile.get("real_name") or resp.get("user", {}).get("name", "unknown")
         USER_CACHE.parent.mkdir(parents=True, exist_ok=True)
-        with open(USER_CACHE, "a") as f:
+        with USER_CACHE.open("a") as f:
             f.write(f"{user_id}={name}\n")
         return name
     return "unknown"
@@ -246,7 +246,7 @@ def resolve_user(client: SlackClient, user_id: str) -> str:
 # --- Mention tracker (inline) ---
 
 
-def mention_tracker_responded(channel: str, thread_ts: str, user_id: str):
+def mention_tracker_responded(channel: str, thread_ts: str, user_id: str) -> None:
     """Clear a tracked @mention (agent responded). No-op if not tracked."""
     if not MENTION_TRACKER_STATE.exists():
         return
@@ -257,11 +257,7 @@ def mention_tracker_responded(channel: str, thread_ts: str, user_id: str):
     new_state = [
         e
         for e in state
-        if not (
-            e.get("channel") == channel
-            and e.get("thread_ts") == thread_ts
-            and e.get("user_id") == user_id
-        )
+        if not (e.get("channel") == channel and e.get("thread_ts") == thread_ts and e.get("user_id") == user_id)
     ]
     if len(new_state) != len(state):
         MENTION_TRACKER_STATE.write_text(json.dumps(new_state, indent=2))
@@ -280,102 +276,78 @@ def read_cursor(cursor_file: Path, channel_id: str) -> str:
     return ""
 
 
-def write_cursor(cursor_file: Path, channel_id: str, ts: str):
+def write_cursor(cursor_file: Path, channel_id: str, ts: str) -> None:
     """Write cursor for a channel (atomic)."""
     cursor_file.parent.mkdir(parents=True, exist_ok=True)
     lines = []
     if cursor_file.exists():
-        lines = [
-            line
-            for line in cursor_file.read_text().splitlines()
-            if not line.startswith(f"{channel_id}=")
-        ]
+        lines = [line for line in cursor_file.read_text().splitlines() if not line.startswith(f"{channel_id}=")]
     lines.append(f"{channel_id}={ts}")
     fd, tmp = tempfile.mkstemp(prefix="slack-cursors.", dir="/tmp")
     os.close(fd)
     Path(tmp).write_text("\n".join(lines) + "\n")
-    os.replace(tmp, str(cursor_file))
+    Path(tmp).replace(cursor_file)
 
 
 # --- Message filtering ---
+
+
+def _classify_message(text: str, user_id: str, identity: dict, thread_participant: bool) -> str | None:
+    """Determine match type for a message. Returns None if not actionable."""
+    if f"<@{user_id}>" in text:
+        return "direct"
+    if BROADCAST_RE.search(text):
+        return "broadcast"
+    text_lower = text.lower()
+    username = identity.get("USERNAME", "").lower()
+    display_name = identity.get("DISPLAY_NAME", "").lower()
+    real_name = identity.get("REAL_NAME", "").lower()
+    if (username and f"@{username}" in text_lower) or (display_name and f"@{display_name}" in text_lower):
+        return "name"
+    if real_name and real_name != display_name and f"@{real_name}" in text_lower:
+        return "name"
+    if thread_participant:
+        return "thread_participant"
+    return None
 
 
 def filter_messages(
     messages: list[dict],
     identity: dict,
     client: SlackClient | None = None,
+    *,
     thread_participant: bool = False,
 ) -> list[dict]:
     """Filter messages for actionable ones. Resolves sender names if client provided."""
     user_id = identity.get("USER_ID", "")
-    username = identity.get("USERNAME", "").lower()
-    display_name = identity.get("DISPLAY_NAME", "").lower()
-    real_name = identity.get("REAL_NAME", "").lower()
-
     results = []
     for msg in messages:
-        # Skip own messages
         if msg.get("user") == user_id:
             continue
-        # Skip non-standard subtypes
         subtype = msg.get("subtype")
         if subtype and subtype not in ("bot_message", "thread_broadcast"):
             continue
-
-        text = msg.get("text", "")
-        text_lower = text.lower()
-        match_type = None
-
-        # Direct mention <@USER_ID>
-        if f"<@{user_id}>" in text:
-            match_type = "direct"
-        # Broadcast mentions
-        elif re.search(
-            r"<!here>|<!channel>|<!everyone>"
-            r"|(^|\s)@here(\s|$)"
-            r"|(^|\s)@channel(\s|$)"
-            r"|(^|\s)@everyone(\s|$)",
-            text,
-        ):
-            match_type = "broadcast"
-        # @name mentions (case-insensitive, require @ prefix)
-        elif username and f"@{username}" in text_lower:
-            match_type = "name"
-        elif display_name and f"@{display_name}" in text_lower:
-            match_type = "name"
-        elif (
-            real_name
-            and real_name != display_name
-            and f"@{real_name}" in text_lower
-        ):
-            match_type = "name"
-        # Thread participant mode
-        elif thread_participant:
-            match_type = "thread_participant"
-
+        match_type = _classify_message(msg.get("text", ""), user_id, identity, thread_participant)
         if match_type:
             sender_id = msg.get("user", "")
-            entry = {
-                "ts": msg.get("ts"),
-                "user": sender_id,
-                "sender": resolve_user(client, sender_id) if client else sender_id,
-                "text": text,
-                "match_type": match_type,
-                "thread_ts": msg.get("thread_ts"),
-            }
-            results.append(entry)
-
-    # Reverse to chronological order (oldest first)
+            results.append(
+                {
+                    "ts": msg.get("ts"),
+                    "user": sender_id,
+                    "sender": resolve_user(client, sender_id) if client else sender_id,
+                    "text": msg.get("text", ""),
+                    "match_type": match_type,
+                    "thread_ts": msg.get("thread_ts"),
+                }
+            )
     results.reverse()
     return results
 
 
-# --- Poll cycle ---
+# --- Thread helpers ---
 
 
-def fetch_thread_context(
-    client: SlackClient, channel_id: str, thread_ts: str
-) -> list[dict]:
+def fetch_thread_context(client: SlackClient, channel_id: str, thread_ts: str) -> list[dict]:
     """Fetch full thread as simplified context for the agent."""
     resp = client.get(
         "conversations.replies",
@@ -383,16 +355,169 @@ def fetch_thread_context(
     )
     if not resp.get("ok"):
         return []
-    context = []
-    for msg in resp.get("messages", []):
-        context.append(
-            {
-                "sender": resolve_user(client, msg.get("user", "")),
-                "text": msg.get("text", ""),
-                "ts": msg.get("ts", ""),
-            }
+    return [
+        {
+            "sender": resolve_user(client, msg.get("user", "")),
+            "text": msg.get("text", ""),
+            "ts": msg.get("ts", ""),
+        }
+        for msg in resp.get("messages", [])
+    ]
+
+
+def _find_active_threads(
+    thread_messages: list[dict], user_id: str, effective_cursor: str, *, participating: bool
+) -> list[dict]:
+    """Find threads with new activity. If participating=True, find threads we're in; otherwise threads we're not in."""
+    parents = []
+    for msg in thread_messages:
+        if msg.get("reply_count", 0) <= 0:
+            continue
+        reply_users = msg.get("reply_users", [])
+        is_participant = msg.get("user") == user_id or user_id in reply_users
+        if participating and not is_participant:
+            continue
+        if not participating and is_participant:
+            continue
+        latest_reply = msg.get("latest_reply", "")
+        if effective_cursor and latest_reply <= effective_cursor:
+            continue
+        parents.append({"ts": msg["ts"], "latest_reply": latest_reply})
+    parents.sort(key=lambda x: x["latest_reply"], reverse=True)
+    return parents[:MAX_THREADS]
+
+
+def _scan_threads(
+    client: SlackClient,
+    channel_id: str,
+    channel_name: str,
+    parents: list[dict],
+    identity: dict,
+    effective_cursor: str,
+    *,
+    participating: bool,
+) -> list[dict]:
+    """Scan threads for actionable messages and enrich with context."""
+    results: list[dict] = []
+    for parent in parents:
+        parent_ts = parent["ts"]
+        replies_resp = client.get(
+            "conversations.replies",
+            {"channel": channel_id, "ts": parent_ts, "oldest": effective_cursor or "0"},
         )
-    return context
+        reply_msgs = replies_resp.get("messages", []) if replies_resp.get("ok") else []
+        reply_msgs = [m for m in reply_msgs if m.get("subtype") != "thread_broadcast"]
+        matches = filter_messages(
+            reply_msgs,
+            identity,
+            client,
+            thread_participant=participating,
+        )
+        if not participating and not matches:
+            continue
+        if matches:
+            thread_ctx = fetch_thread_context(client, channel_id, parent_ts)
+            for msg in matches:
+                msg["channel"] = channel_name
+                msg["channel_id"] = channel_id
+                msg["thread_context"] = thread_ctx
+                if participating:
+                    mention_tracker_responded(channel_id, parent_ts, msg.get("user", ""))
+            results.extend(matches)
+    return results
+
+
+# --- Poll cycle ---
+
+
+def _poll_channel(client: SlackClient, channel_name: str, identity: dict) -> list[dict]:
+    """Poll a single channel for actionable messages."""
+    channel_id = resolve_channel(client, channel_name)
+    if not channel_id:
+        print(f"ERROR: Could not resolve channel '{channel_name}'", file=sys.stderr)
+        return []
+
+    user_id = identity.get("USER_ID", "")
+    old_cursor = read_cursor(CURSOR_FILE, channel_id)
+
+    # Fetch channel history
+    params: dict[str, str] = {
+        "channel": channel_id,
+        "limit": str(HISTORY_LIMIT if old_cursor else HISTORY_LIMIT_NO_CURSOR),
+    }
+    if old_cursor:
+        params["oldest"] = old_cursor
+
+    history = client.get("conversations.history", params)
+    messages = history.get("messages", []) if history.get("ok") else []
+
+    # Filter channel messages
+    actionable: list[dict] = []
+    channel_matches = filter_messages(messages, identity, client)
+    for msg in channel_matches:
+        msg["channel"] = channel_name
+        msg["channel_id"] = channel_id
+    actionable.extend(channel_matches)
+
+    # Thread scanning
+    thread_history = client.get(
+        "conversations.history",
+        {"channel": channel_id, "limit": str(THREAD_HISTORY_LIMIT)},
+    )
+    thread_messages = thread_history.get("messages", []) if thread_history.get("ok") else []
+    old_thread_cursor = read_cursor(THREAD_CURSOR_FILE, channel_id)
+    effective_cursor = old_thread_cursor or old_cursor
+
+    # Participating threads
+    participating = _find_active_threads(thread_messages, user_id, effective_cursor, participating=True)
+    actionable.extend(
+        _scan_threads(
+            client,
+            channel_id,
+            channel_name,
+            participating,
+            identity,
+            effective_cursor,
+            participating=True,
+        )
+    )
+
+    # Non-participating threads with @mentions
+    non_participating = _find_active_threads(thread_messages, user_id, effective_cursor, participating=False)
+    actionable.extend(
+        _scan_threads(
+            client,
+            channel_id,
+            channel_name,
+            non_participating,
+            identity,
+            effective_cursor,
+            participating=False,
+        )
+    )
+
+    # Advance cursors
+    if messages:
+        newest_ts = messages[0].get("ts", "")
+        if newest_ts:
+            write_cursor(CURSOR_FILE, channel_id, newest_ts)
+
+    newest_thread_ts = ""
+    for parent in participating:
+        for msg in thread_messages:
+            if msg["ts"] == parent["ts"]:
+                newest_thread_ts = max(newest_thread_ts, msg.get("latest_reply", ""))
+                break
+    if newest_thread_ts:
+        write_cursor(THREAD_CURSOR_FILE, channel_id, newest_thread_ts)
+
+    return actionable
+
+
+def _run_subprocess(cmd: list[str], timeout: int = 30) -> None:
+    """Run a subprocess, suppressing errors."""
+    with contextlib.suppress(subprocess.TimeoutExpired, FileNotFoundError, OSError):
+        subprocess.run(cmd, capture_output=True, timeout=timeout, check=False)  # noqa: S603
 
 
 def poll_cycle(
@@ -403,185 +528,14 @@ def poll_cycle(
 ) -> str:
     """Run one poll cycle. Returns enriched JSON if actionable, empty if quiet."""
     all_actionable: list[dict] = []
-    user_id = identity.get("USER_ID", "")
+    for channel in channels:
+        stripped = channel.strip()
+        if stripped:
+            all_actionable.extend(_poll_channel(client, stripped, identity))
 
-    for channel_name in channels:
-        channel_name = channel_name.strip()
-        if not channel_name:
-            continue
-
-        channel_id = resolve_channel(client, channel_name)
-        if not channel_id:
-            print(
-                f"ERROR: Could not resolve channel '{channel_name}'",
-                file=sys.stderr,
-            )
-            continue
-
-        # Read cursors
-        old_cursor = read_cursor(CURSOR_FILE, channel_id)
-
-        # Fetch channel history
-        params: dict[str, str] = {
-            "channel": channel_id,
-            "limit": str(HISTORY_LIMIT if old_cursor else HISTORY_LIMIT_NO_CURSOR),
-        }
-        if old_cursor:
-            params["oldest"] = old_cursor
-
-        history = client.get("conversations.history", params)
-        messages = history.get("messages", []) if history.get("ok") else []
-
-        # Filter channel messages
-        channel_matches = filter_messages(messages, identity, client)
-        for msg in channel_matches:
-            msg["channel"] = channel_name
-            msg["channel_id"] = channel_id
-        all_actionable.extend(channel_matches)
-
-        # --- Thread scanning ---
-        thread_history = client.get(
-            "conversations.history",
-            {"channel": channel_id, "limit": str(THREAD_HISTORY_LIMIT)},
-        )
-        thread_messages = (
-            thread_history.get("messages", []) if thread_history.get("ok") else []
-        )
-
-        old_thread_cursor = read_cursor(THREAD_CURSOR_FILE, channel_id)
-        effective_cursor = old_thread_cursor or old_cursor
-
-        # --- Participating threads ---
-        thread_parents = []
-        for msg in thread_messages:
-            if msg.get("reply_count", 0) <= 0:
-                continue
-            reply_users = msg.get("reply_users", [])
-            if msg.get("user") != user_id and user_id not in reply_users:
-                continue
-            latest_reply = msg.get("latest_reply", "")
-            if effective_cursor and latest_reply <= effective_cursor:
-                continue
-            thread_parents.append(
-                {"ts": msg["ts"], "latest_reply": latest_reply}
-            )
-
-        thread_parents.sort(key=lambda x: x["latest_reply"], reverse=True)
-        thread_parents = thread_parents[:MAX_THREADS]
-
-        for parent in thread_parents:
-            parent_ts = parent["ts"]
-            replies_resp = client.get(
-                "conversations.replies",
-                {
-                    "channel": channel_id,
-                    "ts": parent_ts,
-                    "oldest": effective_cursor or "0",
-                },
-            )
-            reply_msgs = (
-                replies_resp.get("messages", []) if replies_resp.get("ok") else []
-            )
-            reply_msgs = [
-                m for m in reply_msgs if m.get("subtype") != "thread_broadcast"
-            ]
-            thread_matches = filter_messages(
-                reply_msgs, identity, client, thread_participant=True
-            )
-            # Enrich with channel info and thread context
-            if thread_matches:
-                thread_ctx = fetch_thread_context(client, channel_id, parent_ts)
-                for msg in thread_matches:
-                    msg["channel"] = channel_name
-                    msg["channel_id"] = channel_id
-                    msg["thread_context"] = thread_ctx
-                    # Auto-clear mention tracking
-                    mention_tracker_responded(
-                        channel_id, parent_ts, msg.get("user", "")
-                    )
-                all_actionable.extend(thread_matches)
-
-        # --- Non-participating threads with @mentions ---
-        mention_parents = []
-        for msg in thread_messages:
-            if msg.get("reply_count", 0) <= 0:
-                continue
-            reply_users = msg.get("reply_users", [])
-            if msg.get("user") == user_id or user_id in reply_users:
-                continue
-            latest_reply = msg.get("latest_reply", "")
-            if effective_cursor and latest_reply <= effective_cursor:
-                continue
-            mention_parents.append(
-                {"ts": msg["ts"], "latest_reply": latest_reply}
-            )
-
-        mention_parents.sort(key=lambda x: x["latest_reply"], reverse=True)
-        mention_parents = mention_parents[:MAX_THREADS]
-
-        for parent in mention_parents:
-            parent_ts = parent["ts"]
-            replies_resp = client.get(
-                "conversations.replies",
-                {
-                    "channel": channel_id,
-                    "ts": parent_ts,
-                    "oldest": effective_cursor or "0",
-                },
-            )
-            reply_msgs = (
-                replies_resp.get("messages", []) if replies_resp.get("ok") else []
-            )
-            reply_msgs = [
-                m for m in reply_msgs if m.get("subtype") != "thread_broadcast"
-            ]
-            mention_matches = filter_messages(reply_msgs, identity, client)
-            if mention_matches:
-                thread_ctx = fetch_thread_context(client, channel_id, parent_ts)
-                for msg in mention_matches:
-                    msg["channel"] = channel_name
-                    msg["channel_id"] = channel_id
-                    msg["thread_context"] = thread_ctx
-                all_actionable.extend(mention_matches)
-
-        # --- Advance cursors ---
-        if messages:
-            newest_ts = messages[0].get("ts", "")
-            if newest_ts:
-                write_cursor(CURSOR_FILE, channel_id, newest_ts)
-
-        newest_thread_ts = ""
-        for parent in thread_parents:
-            for msg in thread_messages:
-                if msg["ts"] == parent["ts"]:
-                    lr = msg.get("latest_reply", "")
-                    if lr > newest_thread_ts:
-                        newest_thread_ts = lr
-                    break
-        if newest_thread_ts:
-            write_cursor(THREAD_CURSOR_FILE, channel_id, newest_thread_ts)
-
-    # --- Heartbeat ---
     if scripts_dir:
-        try:
-            subprocess.run(
-                [str(scripts_dir / "slack-heartbeat")],
-                capture_output=True,
-                timeout=30,
-            )
-        except (subprocess.TimeoutExpired, FileNotFoundError, OSError):
-            pass
-
-    # --- Mention tracker tick ---
-    if scripts_dir:
-        try:
-            subprocess.run(
-                [str(scripts_dir / "slack-mention-tracker"), "tick"],
-                capture_output=True,
-                timeout=10,
-            )
-        except (subprocess.TimeoutExpired, FileNotFoundError, OSError):
-            pass
+        _run_subprocess([str(scripts_dir / "slack-heartbeat")], timeout=30)
+        _run_subprocess([str(scripts_dir / "slack-mention-tracker"), "tick"], timeout=10)
 
     if all_actionable:
         return json.dumps(all_actionable, indent=2)
@@ -604,23 +558,18 @@ def read_pid() -> int | None:
         return None
 
 
-def write_pid():
+def write_pid() -> None:
     """Write current PID and register cleanup."""
     PID_FILE.parent.mkdir(parents=True, exist_ok=True)
     PID_FILE.write_text(str(os.getpid()))
-
-    def cleanup():
-        PID_FILE.unlink(missing_ok=True)
-
-    import atexit
-
-    atexit.register(cleanup)
+    atexit.register(lambda: PID_FILE.unlink(missing_ok=True))
 
 
 # --- Commands ---
 
 
-def cmd_stop():
+def cmd_stop() -> None:
+    """Stop a running daemon."""
     pid = read_pid()
     if pid:
         try:
@@ -633,7 +582,8 @@ def cmd_stop():
         print("Daemon not running")
 
 
-def cmd_status():
+def cmd_status() -> None:
+    """Print daemon status."""
     pid = read_pid()
     if pid:
         print(f"running (PID {pid})")
@@ -644,7 +594,8 @@ def cmd_status():
 # --- Main ---
 
 
-def main():
+def main() -> None:
+    """Entry point."""
     args = sys.argv[1:]
 
     if "--stop" in args:
@@ -656,7 +607,6 @@ def main():
 
     once = "--once" in args
 
-    # Singleton check
     existing_pid = read_pid()
     if existing_pid:
         print(
@@ -667,7 +617,6 @@ def main():
 
     write_pid()
 
-    # Load configuration
     config = load_config()
     channels_str = config.get("AUTONOMOUS_CHANNELS", "")
     if not channels_str:
@@ -676,9 +625,7 @@ def main():
 
     channels = [c.strip() for c in channels_str.split(",") if c.strip()]
     proxy_url = config.get("SLACK_PROXY_URL")
-    poll_interval = int(
-        config.get("SLACK_POLL_INTERVAL", str(DEFAULT_POLL_INTERVAL))
-    )
+    poll_interval = int(config.get("SLACK_POLL_INTERVAL", str(DEFAULT_POLL_INTERVAL)))
 
     token = load_token()
     identity = load_identity()
