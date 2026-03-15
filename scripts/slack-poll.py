@@ -60,6 +60,7 @@ PID_FILE = Path.home() / ".claude" / "slack-poll.pid"
 
 POLL_OPTIONS = {
     "interval": typer.Option(None, "--interval", "-i", help="Poll interval in seconds"),
+    "context": typer.Option(False, "--context", help="Include thread context in output"),
 }
 
 # --- App ---
@@ -145,8 +146,9 @@ def _scan_threads(
     seen: dict[str, str | None],
     *,
     participating: bool,
+    include_context: bool = False,
 ) -> list[dict]:
-    """Scan threads for actionable messages and enrich with context."""
+    """Scan threads for actionable messages. Optionally include thread context."""
     resolve_fn = partial(resolve_user, api_get)
     results: list[dict] = []
     for parent in parents:
@@ -159,11 +161,12 @@ def _scan_threads(
         if not participating and not matches:
             continue
         if matches:
-            thread_ctx = _fetch_thread_context(api_get, channel_id, parent_ts)
+            thread_ctx = _fetch_thread_context(api_get, channel_id, parent_ts) if include_context else None
             for msg in matches:
                 msg["channel"] = channel_name
                 msg["channel_id"] = channel_id
-                msg["thread_context"] = thread_ctx
+                if thread_ctx is not None:
+                    msg["thread_context"] = thread_ctx
                 if participating:
                     _mention_tracker_mod.responded(channel_id, parent_ts, msg.get("user", ""))
             results.extend(matches)
@@ -173,7 +176,9 @@ def _scan_threads(
 # --- Poll cycle ---
 
 
-def _poll_channel(api_get: callable, channel_name: str, identity: dict, seen: dict[str, str | None]) -> list[dict]:
+def _poll_channel(
+    api_get: callable, channel_name: str, identity: dict, seen: dict[str, str | None], *, include_context: bool = False
+) -> list[dict]:
     """Poll a single channel for actionable messages, skipping already-seen ones."""
     channel_id = resolve_channel(api_get, channel_name)
     if not channel_id:
@@ -215,13 +220,31 @@ def _poll_channel(api_get: callable, channel_name: str, identity: dict, seen: di
     participating = _find_active_threads(thread_messages, user_id, participating=True)
     _debug_log(f"Participating threads: {len(participating)}")
     actionable.extend(
-        _scan_threads(api_get, channel_id, channel_name, participating, identity, seen, participating=True)
+        _scan_threads(
+            api_get,
+            channel_id,
+            channel_name,
+            participating,
+            identity,
+            seen,
+            participating=True,
+            include_context=include_context,
+        )
     )
 
     non_participating = _find_active_threads(thread_messages, user_id, participating=False)
     _debug_log(f"Non-participating threads: {len(non_participating)}")
     actionable.extend(
-        _scan_threads(api_get, channel_id, channel_name, non_participating, identity, seen, participating=False)
+        _scan_threads(
+            api_get,
+            channel_id,
+            channel_name,
+            non_participating,
+            identity,
+            seen,
+            participating=False,
+            include_context=include_context,
+        )
     )
 
     return actionable
@@ -233,6 +256,7 @@ def poll_cycle(
     identity: dict,
     *,
     dry_run: bool = False,
+    include_context: bool = False,
 ) -> str:
     """Run one poll cycle. Returns enriched JSON if actionable, empty if quiet."""
     seen = load_seen()
@@ -240,7 +264,7 @@ def poll_cycle(
     for channel in channels:
         stripped = channel.strip()
         if stripped:
-            all_actionable.extend(_poll_channel(client.get, stripped, identity, seen))
+            all_actionable.extend(_poll_channel(client.get, stripped, identity, seen, include_context=include_context))
 
     # Mark all output messages as seen
     for msg in all_actionable:
@@ -325,10 +349,11 @@ def once(
     verbose: int = COMMON_OPTIONS["verbose"],
     debug: bool = COMMON_OPTIONS["debug"],
     dry_run: bool = COMMON_OPTIONS["dry_run"],
+    context: bool = POLL_OPTIONS["context"],
 ) -> None:
     """Run a single poll cycle (for testing)."""
     _apply_globals(verbose, debug)
-    _run_daemon(once=True, dry_run=dry_run)
+    _run_daemon(once=True, dry_run=dry_run, include_context=context)
 
 
 @app.command()
@@ -337,10 +362,11 @@ def run(
     debug: bool = COMMON_OPTIONS["debug"],
     dry_run: bool = COMMON_OPTIONS["dry_run"],
     interval: Optional[int] = POLL_OPTIONS["interval"],  # noqa: UP045
+    context: bool = POLL_OPTIONS["context"],
 ) -> None:
     """Run daemon until actionable messages found (default command)."""
     _apply_globals(verbose, debug)
-    _run_daemon(once=False, dry_run=dry_run, interval_override=interval)
+    _run_daemon(once=False, dry_run=dry_run, interval_override=interval, include_context=context)
 
 
 @app.callback(invoke_without_command=True)
@@ -350,14 +376,17 @@ def main(
     debug: bool = COMMON_OPTIONS["debug"],
     dry_run: bool = COMMON_OPTIONS["dry_run"],
     interval: Optional[int] = POLL_OPTIONS["interval"],  # noqa: UP045
+    context: bool = POLL_OPTIONS["context"],
 ) -> None:
     """Long-poll daemon for Slack monitoring."""
     _apply_globals(verbose, debug)
     if ctx.invoked_subcommand is None:
-        _run_daemon(once=False, dry_run=dry_run, interval_override=interval)
+        _run_daemon(once=False, dry_run=dry_run, interval_override=interval, include_context=context)
 
 
-def _run_daemon(*, once: bool = False, dry_run: bool = False, interval_override: int | None = None) -> None:
+def _run_daemon(
+    *, once: bool = False, dry_run: bool = False, interval_override: int | None = None, include_context: bool = False
+) -> None:
     """Core daemon loop."""
     existing_pid = read_pid()
     if existing_pid:
@@ -391,7 +420,7 @@ def _run_daemon(*, once: bool = False, dry_run: bool = False, interval_override:
     try:
         while not _shutdown:
             try:
-                output = poll_cycle(client, channels, identity, dry_run=dry_run)
+                output = poll_cycle(client, channels, identity, dry_run=dry_run, include_context=include_context)
             except Exception as exc:
                 _log(f"ERROR: Poll cycle failed: {exc}", level=0)
                 output = ""
