@@ -24,7 +24,6 @@ import shutil
 import signal
 import subprocess
 import sys
-import tempfile
 import time
 from pathlib import Path
 from typing import Optional
@@ -39,8 +38,7 @@ from slack_cli_options import COMMON_OPTIONS
 
 CONFIG_FILE = Path.home() / ".claude" / "slack.conf"
 IDENTITY_FILE = Path.home() / ".claude" / "slack-cache" / "identity"
-CURSOR_FILE = Path.home() / ".claude" / "slack-cursors.conf"
-THREAD_CURSOR_FILE = Path.home() / ".claude" / "slack-thread-cursors.conf"
+SEEN_FILE = Path.home() / ".claude" / "slack-seen.json"
 CHANNEL_CACHE = Path.home() / ".claude" / "slack-cache" / "channels"
 USER_CACHE = Path.home() / ".claude" / "slack-cache" / "users"
 MENTION_TRACKER_STATE = Path.home() / ".claude" / "slack-mention-tracker.json"
@@ -51,8 +49,8 @@ FALLBACK_STATE_FILE = Path.home() / ".claude" / "slack-proxy-fallback-alerted"
 
 DEFAULT_POLL_INTERVAL = 60
 HISTORY_LIMIT = 20
-HISTORY_LIMIT_NO_CURSOR = 10
 THREAD_HISTORY_LIMIT = 50
+CATCHUP_ACTIONABLE_LIMIT = 5  # on first run / long offline, only act on last N messages
 MAX_THREADS = 5
 FALLBACK_COOLDOWN = 600  # 10 minutes
 
@@ -294,30 +292,32 @@ def mention_tracker_responded(channel: str, thread_ts: str, user_id: str) -> Non
         MENTION_TRACKER_STATE.write_text(json.dumps(new_state, indent=2))
 
 
-# --- Cursor management ---
+# --- Seen set ---
+
+SEEN_MAX_AGE = 86400  # 24 hours
 
 
-def read_cursor(cursor_file: Path, channel_id: str) -> str:
-    """Read cursor for a channel."""
-    if not cursor_file.exists():
-        return ""
-    for line in cursor_file.read_text().splitlines():
-        if line.startswith(f"{channel_id}="):
-            return line.split("=", 1)[1]
-    return ""
+def load_seen() -> dict[str, str | None]:
+    """Load the seen map: {message_ts: thread_ts_or_null}.
+
+    Messages with thread_ts=null are channel-level and stay seen.
+    Thread messages are keyed by their ts with their thread_ts as value.
+    """
+    if not SEEN_FILE.exists():
+        return {}
+    try:
+        data = json.loads(SEEN_FILE.read_text())
+        return data.get("seen", {})
+    except (json.JSONDecodeError, ValueError):
+        return {}
 
 
-def write_cursor(cursor_file: Path, channel_id: str, ts: str) -> None:
-    """Write cursor for a channel (atomic)."""
-    cursor_file.parent.mkdir(parents=True, exist_ok=True)
-    lines = []
-    if cursor_file.exists():
-        lines = [line for line in cursor_file.read_text().splitlines() if not line.startswith(f"{channel_id}=")]
-    lines.append(f"{channel_id}={ts}")
-    fd, tmp = tempfile.mkstemp(prefix="slack-cursors.", dir="/tmp")
-    os.close(fd)
-    Path(tmp).write_text("\n".join(lines) + "\n")
-    Path(tmp).replace(cursor_file)
+def save_seen(seen: dict[str, str | None]) -> None:
+    """Save the seen map, pruning entries older than SEEN_MAX_AGE."""
+    now = time.time()
+    pruned = {ts: thread_ts for ts, thread_ts in seen.items() if now - float(ts) < SEEN_MAX_AGE}
+    SEEN_FILE.parent.mkdir(parents=True, exist_ok=True)
+    SEEN_FILE.write_text(json.dumps({"seen": pruned}))
 
 
 # --- Message filtering ---
@@ -396,10 +396,8 @@ def fetch_thread_context(client: SlackClient, channel_id: str, thread_ts: str) -
     ]
 
 
-def _find_active_threads(
-    thread_messages: list[dict], user_id: str, effective_cursor: str, *, participating: bool
-) -> list[dict]:
-    """Find threads with new activity."""
+def _find_active_threads(thread_messages: list[dict], user_id: str, *, participating: bool) -> list[dict]:
+    """Find threads with replies."""
     parents = []
     for msg in thread_messages:
         if msg.get("reply_count", 0) <= 0:
@@ -410,10 +408,7 @@ def _find_active_threads(
             continue
         if not participating and is_participant:
             continue
-        latest_reply = msg.get("latest_reply", "")
-        if effective_cursor and latest_reply <= effective_cursor:
-            continue
-        parents.append({"ts": msg["ts"], "latest_reply": latest_reply})
+        parents.append({"ts": msg["ts"], "latest_reply": msg.get("latest_reply", "")})
     parents.sort(key=lambda x: x["latest_reply"], reverse=True)
     return parents[:MAX_THREADS]
 
@@ -424,7 +419,7 @@ def _scan_threads(
     channel_name: str,
     parents: list[dict],
     identity: dict,
-    effective_cursor: str,
+    seen: dict[str, str | None],
     *,
     participating: bool,
 ) -> list[dict]:
@@ -434,10 +429,10 @@ def _scan_threads(
         parent_ts = parent["ts"]
         replies_resp = client.get(
             "conversations.replies",
-            {"channel": channel_id, "ts": parent_ts, "oldest": effective_cursor or "0"},
+            {"channel": channel_id, "ts": parent_ts},
         )
         reply_msgs = replies_resp.get("messages", []) if replies_resp.get("ok") else []
-        # Skip thread parent (already processed as channel message) and thread_broadcast
+        # Skip thread parent and thread_broadcast
         reply_msgs = [m for m in reply_msgs if m.get("subtype") != "thread_broadcast" and m.get("ts") != parent_ts]
         matches = filter_messages(
             reply_msgs,
@@ -445,6 +440,8 @@ def _scan_threads(
             client,
             thread_participant=participating,
         )
+        # Strip already-seen
+        matches = [m for m in matches if m["ts"] not in seen]
         if not participating and not matches:
             continue
         if matches:
@@ -462,8 +459,8 @@ def _scan_threads(
 # --- Poll cycle ---
 
 
-def _poll_channel(client: SlackClient, channel_name: str, identity: dict) -> list[dict]:
-    """Poll a single channel for actionable messages."""
+def _poll_channel(client: SlackClient, channel_name: str, identity: dict, seen: dict[str, str | None]) -> list[dict]:
+    """Poll a single channel for actionable messages, skipping already-seen ones."""
     channel_id = resolve_channel(client, channel_name)
     if not channel_id:
         _log(f"ERROR: Could not resolve channel '{channel_name}'", level=0)
@@ -471,86 +468,51 @@ def _poll_channel(client: SlackClient, channel_name: str, identity: dict) -> lis
 
     _debug_log(f"Polling #{channel_name} ({channel_id})")
     user_id = identity.get("USER_ID", "")
-    old_cursor = read_cursor(CURSOR_FILE, channel_id)
-    _debug_log(f"Channel cursor: {old_cursor or '(none)'}")
 
-    # Fetch channel history
-    params: dict[str, str] = {
-        "channel": channel_id,
-        "limit": str(HISTORY_LIMIT if old_cursor else HISTORY_LIMIT_NO_CURSOR),
-    }
-    if old_cursor:
-        params["oldest"] = old_cursor
-
-    history = client.get("conversations.history", params)
+    # Fetch recent channel history
+    history = client.get("conversations.history", {"channel": channel_id, "limit": str(HISTORY_LIMIT)})
     messages = history.get("messages", []) if history.get("ok") else []
     _debug_log(f"Channel messages: {len(messages)}")
 
-    # Filter channel messages
+    # Catchup: if seen is empty (first run / long offline), pre-seed with all
+    # but the last CATCHUP_ACTIONABLE_LIMIT messages so we don't respond to stale @mentions
+    if not seen and messages:
+        _log("First run catchup: seeding seen set from channel history", level=0)
+        for msg in messages[CATCHUP_ACTIONABLE_LIMIT:]:
+            seen[msg["ts"]] = msg.get("thread_ts")
+
+    # Filter and strip seen
     actionable: list[dict] = []
     channel_matches = filter_messages(messages, identity, client)
+    channel_matches = [m for m in channel_matches if m["ts"] not in seen]
     for msg in channel_matches:
         msg["channel"] = channel_name
         msg["channel_id"] = channel_id
     actionable.extend(channel_matches)
-    _debug_log(f"Channel matches: {len(channel_matches)}")
+    _debug_log(f"Channel matches (unseen): {len(channel_matches)}")
 
-    # Thread scanning
-    thread_history = client.get(
-        "conversations.history",
-        {"channel": channel_id, "limit": str(THREAD_HISTORY_LIMIT)},
-    )
-    thread_messages = thread_history.get("messages", []) if thread_history.get("ok") else []
-    old_thread_cursor = read_cursor(THREAD_CURSOR_FILE, channel_id)
-    effective_cursor = old_thread_cursor or old_cursor
+    # Thread scanning — fetch wider history for thread discovery
+    if len(messages) < THREAD_HISTORY_LIMIT:
+        thread_resp = client.get("conversations.history", {"channel": channel_id, "limit": str(THREAD_HISTORY_LIMIT)})
+        thread_messages = thread_resp.get("messages", []) if thread_resp.get("ok") else []
+    else:
+        thread_messages = messages
 
     # Participating threads
-    participating = _find_active_threads(thread_messages, user_id, effective_cursor, participating=True)
-    _debug_log(f"Participating threads with activity: {len(participating)}")
+    participating = _find_active_threads(thread_messages, user_id, participating=True)
+    _debug_log(f"Participating threads: {len(participating)}")
     actionable.extend(
-        _scan_threads(
-            client,
-            channel_id,
-            channel_name,
-            participating,
-            identity,
-            effective_cursor,
-            participating=True,
-        )
+        _scan_threads(client, channel_id, channel_name, participating, identity, seen, participating=True)
     )
 
     # Non-participating threads with @mentions
-    non_participating = _find_active_threads(thread_messages, user_id, effective_cursor, participating=False)
-    _debug_log(f"Non-participating threads with activity: {len(non_participating)}")
+    non_participating = _find_active_threads(thread_messages, user_id, participating=False)
+    _debug_log(f"Non-participating threads: {len(non_participating)}")
     actionable.extend(
-        _scan_threads(
-            client,
-            channel_id,
-            channel_name,
-            non_participating,
-            identity,
-            effective_cursor,
-            participating=False,
-        )
+        _scan_threads(client, channel_id, channel_name, non_participating, identity, seen, participating=False)
     )
 
-    # Collect cursor updates (written later by poll_cycle)
-    pending_cursors: dict[str, str] = {}
-    if messages:
-        newest_ts = messages[0].get("ts", "")
-        if newest_ts:
-            pending_cursors["channel"] = newest_ts
-
-    newest_thread_ts = ""
-    for parent in [*participating, *non_participating]:
-        for msg in thread_messages:
-            if msg["ts"] == parent["ts"]:
-                newest_thread_ts = max(newest_thread_ts, msg.get("latest_reply", ""))
-                break
-    if newest_thread_ts:
-        pending_cursors["thread"] = newest_thread_ts
-
-    return actionable, channel_id, pending_cursors
+    return actionable
 
 
 def _run_subprocess(cmd: list[str], timeout: int = 30) -> None:
@@ -568,23 +530,17 @@ def poll_cycle(
     dry_run: bool = False,
 ) -> str:
     """Run one poll cycle. Returns enriched JSON if actionable, empty if quiet."""
+    seen = load_seen()
     all_actionable: list[dict] = []
-    all_cursors: list[tuple[str, dict[str, str]]] = []
     for channel in channels:
         stripped = channel.strip()
         if stripped:
-            actionable, channel_id, pending_cursors = _poll_channel(client, stripped, identity)
-            all_actionable.extend(actionable)
-            all_cursors.append((channel_id, pending_cursors))
+            all_actionable.extend(_poll_channel(client, stripped, identity, seen))
 
-    # Always advance cursors — the daemon guarantees delivery via stdout.
-    # In run mode: output goes to background task, agent reads it.
-    # In once mode: output goes to stdout, caller must consume it.
-    for channel_id, cursors in all_cursors:
-        if "channel" in cursors:
-            write_cursor(CURSOR_FILE, channel_id, cursors["channel"])
-        if "thread" in cursors:
-            write_cursor(THREAD_CURSOR_FILE, channel_id, cursors["thread"])
+    # Mark all output messages as seen
+    for msg in all_actionable:
+        seen[msg["ts"]] = msg.get("thread_ts")
+    save_seen(seen)
 
     if scripts_dir and not dry_run:
         _run_subprocess([str(scripts_dir / "slack-heartbeat")], timeout=30)
