@@ -68,17 +68,11 @@ If cached state becomes invalid (e.g. message deleted), the script clears the ca
 
 When entering maintenance (plugin updates, session restarts, OS upgrades), signal it in your heartbeat so peers don't flag you as stale:
 
-1. **Stop polling first** — use `/scc-slack:stop` to cancel the polling cron. This prevents polls from overwriting your maintenance status.
+1. **Use `/scc-slack:heartbeat --maintenance [DURATION]`** — this automatically stops the poller (via `/scc-slack:stop`), then sets the maintenance heartbeat. Duration is optional (e.g. `2h`, `30m`, `1d`). This appends `| Maintenance <ISO time> [for <duration>]` to your status line.
 
-2. **Set maintenance heartbeat** via `ctx_execute`:
-   ```bash
-   "${SCRIPTS_DIR}/slack-heartbeat" --maintenance [DURATION]
-   ```
-   Duration is optional (e.g. `2h`, `30m`, `1d`). This appends `| Maintenance <ISO time> [for <duration>]` to your status line.
+2. **Peers skip you** — the watchdog detects the maintenance marker and excludes you from staleness checks.
 
-3. **Peers skip you** — the watchdog detects the maintenance marker and excludes you from staleness checks.
-
-4. **Resume** — when maintenance is complete, restart polling with `/scc-slack:loop`. The next normal heartbeat cycle will clear the maintenance marker automatically.
+3. **Resume** — when maintenance is complete, restart polling with `/scc-slack:loop`. The next normal heartbeat cycle will clear the maintenance marker automatically.
 
 ## Scheduling
 
