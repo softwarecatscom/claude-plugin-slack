@@ -25,7 +25,5 @@ repos:
         args:
         - --fix
         files: scripts/.*\.py$
-        exclude: ^scripts/(slack-heartbeat|slack-mention-tracker)\.py$
       - id: ruff-format
         files: scripts/.*\.py$
-        exclude: ^scripts/(slack-heartbeat|slack-mention-tracker)\.py$

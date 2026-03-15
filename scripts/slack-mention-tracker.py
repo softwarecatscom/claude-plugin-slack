@@ -17,35 +17,35 @@ State file: ~/.claude/slack-mention-tracker.json
 """
 
 import json
-import os
 import sys
-from datetime import datetime, timezone
+from datetime import UTC, datetime
+from pathlib import Path
 
-STATE_FILE = os.path.expanduser("~/.claude/slack-mention-tracker.json")
-THRESHOLD = 5  # poll cycles before escalating (~5 minutes at 1m intervals)
+STATE_FILE = Path.home() / ".claude" / "slack-mention-tracker.json"
+ESCALATION_THRESHOLD = 5  # poll cycles before escalating (~5 minutes at 1m intervals)
+
+ARGS_COUNT_MIN = 2
+ARGS_COUNT_ADD = 5
+ARGS_COUNT_RESPONDED = 5
 
 
 def load_state():
-    if os.path.exists(STATE_FILE):
-        with open(STATE_FILE) as f:
+    if STATE_FILE.exists():
+        with STATE_FILE.open() as f:
             return json.load(f)
     return []
 
 
 def save_state(state):
-    os.makedirs(os.path.dirname(STATE_FILE), exist_ok=True)
-    with open(STATE_FILE, "w") as f:
+    STATE_FILE.parent.mkdir(parents=True, exist_ok=True)
+    with STATE_FILE.open("w") as f:
         json.dump(state, f, indent=2)
 
 
 def add(channel, thread_ts, user_id):
     state = load_state()
     for entry in state:
-        if (
-            entry["channel"] == channel
-            and entry["thread_ts"] == thread_ts
-            and entry["user_id"] == user_id
-        ):
+        if entry["channel"] == channel and entry["thread_ts"] == thread_ts and entry["user_id"] == user_id:
             return  # already tracking
     state.append(
         {
@@ -54,7 +54,7 @@ def add(channel, thread_ts, user_id):
             "user_id": user_id,
             "cycles": 0,
             "alerted": False,
-            "added_at": datetime.now(timezone.utc).isoformat(),
+            "added_at": datetime.now(UTC).isoformat(),
         }
     )
     save_state(state)
@@ -63,13 +63,7 @@ def add(channel, thread_ts, user_id):
 def responded(channel, thread_ts, user_id):
     state = load_state()
     state = [
-        e
-        for e in state
-        if not (
-            e["channel"] == channel
-            and e["thread_ts"] == thread_ts
-            and e["user_id"] == user_id
-        )
+        e for e in state if not (e["channel"] == channel and e["thread_ts"] == thread_ts and e["user_id"] == user_id)
     ]
     save_state(state)
 
@@ -79,7 +73,7 @@ def tick():
     expired = []
     for entry in state:
         entry["cycles"] += 1
-        if entry["cycles"] >= THRESHOLD and not entry["alerted"]:
+        if entry["cycles"] >= ESCALATION_THRESHOLD and not entry["alerted"]:
             entry["alerted"] = True
             expired.append(dict(entry))
     save_state(state)
@@ -92,7 +86,7 @@ def list_all():
 
 
 def main():
-    if len(sys.argv) < 2:
+    if len(sys.argv) < ARGS_COUNT_MIN:
         print(
             "Usage: slack-mention-tracker {add|responded|tick|list} [args...]",
             file=sys.stderr,
@@ -102,7 +96,7 @@ def main():
     cmd = sys.argv[1]
 
     if cmd == "add":
-        if len(sys.argv) != 5:
+        if len(sys.argv) != ARGS_COUNT_ADD:
             print(
                 "Usage: slack-mention-tracker add <channel> <thread_ts> <user_id>",
                 file=sys.stderr,
@@ -110,7 +104,7 @@ def main():
             sys.exit(1)
         add(sys.argv[2], sys.argv[3], sys.argv[4])
     elif cmd == "responded":
-        if len(sys.argv) != 5:
+        if len(sys.argv) != ARGS_COUNT_RESPONDED:
             print(
                 "Usage: slack-mention-tracker responded <channel> <thread_ts> <user_id>",
                 file=sys.stderr,
