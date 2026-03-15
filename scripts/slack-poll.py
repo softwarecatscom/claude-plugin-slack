@@ -49,7 +49,7 @@ _mention_tracker_mod = importlib.import_module("slack-mention-tracker")
 
 # --- Constants ---
 
-DEFAULT_POLL_INTERVAL = 60
+DEFAULT_POLL_INTERVAL = 30
 HISTORY_LIMIT = 20
 THREAD_HISTORY_LIMIT = 50
 MAX_THREADS = 5
