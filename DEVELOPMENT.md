@@ -15,47 +15,42 @@ pre-commit install
 pre-commit run --all-files
 ```
 
-Pre-commit runs automatically on `git commit`. Hooks include: shellcheck (bash), ruff check + format (Python), and standard file checks (trailing whitespace, line endings, JSON/TOML validation).
+Pre-commit runs automatically on `git commit` and in CI (`pre-commit run --all-files` is the single source of truth for both local and GitHub Actions).
 
-## Scripts
+## Code Quality
 
-### Naming
-- All scripts follow the `slack-<action>` pattern (e.g. `slack-send`, `slack-poll`, `slack-heartbeat`)
-- Scripts are executable and live in `scripts/`
+### Linting and Formatting
 
-### Flag Parsing
-- Flags are position-independent — all flags are collected left-to-right from any argv position, remaining args are positionals
-- `slack-send agents "text" --thread TS` works the same as `slack-send --thread TS agents "text"`
-- Use a `while/case` loop that collects `POSITIONALS` array for non-flag arguments
+- **Python**: ruff check + ruff format (config in `ruff.toml`, adapted from selfpub-wizard)
+- **Bash**: shellcheck (vendored `scripts/slack` excluded — we don't own it)
+- **Pre-commit hooks**: check-json, check-yaml, check-toml, end-of-file-fixer, trailing-whitespace, check-case-conflict, check-merge-conflict, mixed-line-ending
+- **CI**: GitHub Actions runs `pre-commit run --all-files` on push to master and PRs
 
-### Language Choice
-- **New scripts**: Write in Python (`.py` extension) with a bash wrapper
-- **Existing simple scripts**: Keep as bash; don't rewrite unless major changes are needed
-- **Bash wrappers** are minimal: shebang, `set -euo pipefail`, `exec uv run --no-project script.py "$@"`
+### Python Style Rules
 
-### Python Type Annotations
-
-Use native Python types — never import from `typing`. Add `from __future__ import annotations` at the top of every file.
-
-```python
-# Good
-def fetch(items: list[dict], limit: int | None = None) -> dict[str, str]: ...
-
-# Bad — never use these
-from typing import List, Dict
-def fetch(items: List[Dict], limit: Optional[int] = None) -> Dict[str, str]: ...
-```
-
-**Exception: Typer command signatures.** Typer does not support `type | None` syntax for optional arguments in `@app.command()` functions. Use `Optional[type]` there only, with a `# noqa: UP007` to suppress the ruff warning:
+- `from __future__ import annotations` at the top of every Python file
+- Native Python types everywhere: `list[dict]`, `int | None`, `dict[str, str]` — never import from `typing`
+- **Exception: Typer command signatures.** Typer does not support `type | None` for optional args in `@app.command()` functions. Use `Optional[type]` there only, with `# noqa: UP045`:
 
 ```python
 from typing import Optional
 
 @app.command()
 def run(
-    interval: Optional[int] = typer.Option(None, ...),  # noqa: UP045
+    interval: Optional[int] = POLL_OPTIONS["interval"],  # noqa: UP045
 ) -> None: ...
 ```
+
+## Scripts
+
+### Naming
+- All scripts follow the `slack-<action>` pattern (e.g. `slack-send`, `slack-poll-daemon`, `slack-heartbeat`)
+- Scripts are executable and live in `scripts/`
+
+### Language Choice
+- **New scripts**: Write in Python (`.py` extension) with a bash wrapper
+- **Existing simple scripts**: Keep as bash; don't rewrite unless major changes are needed
+- **Bash wrappers** are minimal: shebang, `set -euo pipefail`, `exec uv run --no-project script.py "$@"`
 
 ### PEP 723 Inline Script Metadata
 
@@ -73,35 +68,34 @@ All Python scripts use [PEP 723](https://peps.python.org/pep-0723/) inline metad
 
 Python scripts with CLI arguments use [Typer](https://typer.tiangolo.com/) for argument parsing. All scripts must support these standard flags:
 
-| Flag | Description |
-|------|-------------|
-| `--debug` | Enable debug output to stderr |
-| `--verbose`, `-v` | Increase verbosity (repeatable: `-v`, `-vv`, `-vvv`) |
-| `--dry-run` | Run without side effects (skip writes, API mutations) |
+| Flag | Description | Env Var |
+|------|-------------|---------|
+| `--debug` | Enable debug output to stderr | `DEBUG` |
+| `--verbose`, `-v` | Increase verbosity (repeatable: `-v`, `-vv`, `-vvv`) | `VERBOSE` |
+| `--dry-run` | Run without side effects (skip writes, API mutations) | `DRY_RUN` |
 
-Shared options are defined in `scripts/slack_cli_options.py` and imported by all scripts:
-
-```python
-from slack_cli_options import COMMON_OPTIONS
-# COMMON_OPTIONS has: "verbose", "debug", "dry_run" — all with envvar support
-```
-
-Import with a sys.path insert (needed for PEP 723 `--no-project` scripts):
+**Shared options** are defined in `scripts/slack_cli_options.py` and imported by all scripts. This avoids repeating `typer.Option(...)` specs and ensures consistent flag names, help text, and env var bindings:
 
 ```python
 import sys
 from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from slack_cli_options import COMMON_OPTIONS
+# COMMON_OPTIONS has: "verbose", "debug", "dry_run" — all with envvar support
 ```
 
-Script-specific options go in a local `SCRIPT_OPTIONS` dict (e.g. `POLL_OPTIONS`, `HEARTBEAT_OPTIONS`) to avoid repeating `typer.Option(...)` across multiple commands:
+**Script-specific options** go in a local dict (e.g. `POLL_OPTIONS`, `HEARTBEAT_OPTIONS`). Same DRY pattern — define once, reference by key:
 
 ```python
 POLL_OPTIONS = {
     "interval": typer.Option(None, "--interval", "-i", help="Poll interval in seconds"),
 }
 ```
+
+**Output conventions:**
+- `typer.echo(msg, err=True)` for diagnostic output (stderr)
+- `typer.echo(msg)` for program output (stdout)
+- `raise typer.Exit(code=1)` instead of `sys.exit(1)`
 
 Example structure:
 
@@ -128,7 +122,10 @@ if __name__ == "__main__":
     app()
 ```
 
-Use `typer.echo(msg, err=True)` for diagnostic output (stderr). Use `typer.echo(msg)` for program output (stdout). Use `raise typer.Exit(code=1)` instead of `sys.exit(1)`.
+### Bash Flag Parsing
+- Flags are position-independent — all flags are collected left-to-right from any argv position, remaining args are positionals
+- `slack-send agents "text" --thread TS` works the same as `slack-send --thread TS agents "text"`
+- Use a `while/case` loop that collects `POSITIONALS` array for non-flag arguments
 
 ### JSON Construction
 - Use `jq -n` for building JSON payloads in bash (never string interpolation)
@@ -142,6 +139,35 @@ Use `typer.echo(msg, err=True)` for diagnostic output (stderr). Use `typer.echo(
 ### Token Loading
 - Load the Slack bot token from `$(dirname "$(which slack)")/.slack`
 - In Python: find the `slack` binary via `which`, then read `.slack` from its parent directory
+
+## Daemon Architecture
+
+The poll daemon (`scripts/slack-poll-daemon.py`) is the **only** mechanism for agents to receive Slack events. There is no cron-based `slack-poll` alternative.
+
+### How it works
+1. `/loop 1m` cron fires → invokes `daemon-loop` skill
+2. Skill checks daemon status (singleton via PID file) → launches if stopped via `Bash(run_in_background: true)`
+3. Daemon polls Slack every 60s internally — zero token cost while idle
+4. When actionable messages found: outputs enriched JSON and exits
+5. Agent processes messages via `read` skill → next cron tick re-launches daemon
+
+### Enriched Output
+The daemon pre-processes everything so the AI only handles judgment calls:
+- **Sender names** pre-resolved (no API calls needed by agent)
+- **Thread context** pre-fetched for thread replies
+- **Mention tracking** auto-cleared for thread replies
+- **Cursors** managed internally (channel + thread)
+- **Heartbeat** runs every cycle
+- **Mention tracker tick** runs every cycle
+
+### Token Efficiency
+- **Idle cycle**: ~170 tokens (daemon-loop skill only — checks status, does nothing)
+- **Active cycle**: ~727 tokens (daemon-loop + read skill)
+- Push ALL algorithmic work into the Python daemon. The AI skill should contain ONLY judgment calls and response composition.
+- When adding features, ask: "Can this run in the daemon instead of the skill?"
+
+### Config
+All skills use `source ~/.claude/slack.conf` for SCRIPTS_DIR and channel config. Only the `setup` and `update` skills write SCRIPTS_DIR — all others read it.
 
 ## Heartbeat
 
