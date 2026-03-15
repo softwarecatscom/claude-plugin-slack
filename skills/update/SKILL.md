@@ -77,7 +77,16 @@ Before reporting success, complete all of these checks:
 
 4. **Version confirmation** — only report "Updated to vX.Y.Z" after all checks pass.
 
-### Step 5: Update MEMORY.md
+### Step 5: Read the polling guide
+
+After updating, read `docs/polling-guide.md` in the plugin repo to refresh your understanding of the polling architecture. The guide covers how the poller works, message format, processing rules, and troubleshooting.
+
+```bash
+source ~/.claude/slack.conf
+cat "$(dirname "${SCRIPTS_DIR}")/docs/polling-guide.md"
+```
+
+### Step 6: Update MEMORY.md
 
 Update the scc-slack version and script path in your project memory file so future sessions use the correct version:
 - `scc-slack version`: v<new_version>
