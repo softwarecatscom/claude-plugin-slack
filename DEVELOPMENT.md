@@ -2,6 +2,21 @@
 
 Conventions for developing and maintaining the scc-slack plugin.
 
+## Dev Environment Setup
+
+```bash
+# Install dev dependencies (pre-commit, ruff, pytest)
+uv sync --group dev
+
+# Install pre-commit hooks
+pre-commit install
+
+# Verify hooks work
+pre-commit run --all-files
+```
+
+Pre-commit runs automatically on `git commit`. Hooks include: shellcheck (bash), ruff check + format (Python), and standard file checks (trailing whitespace, line endings, JSON/TOML validation).
+
 ## Scripts
 
 ### Naming
@@ -78,8 +93,8 @@ Conventions for developing and maintaining the scc-slack plugin.
 
 ### Update Verification (AGT-22)
 1. Verify scripts exist on disk at new version path
-2. Test poll with new version (`slack-poll` — verify output contains channel headers)
-3. Confirm no errors in output
+2. Test poll with new version (`slack-poll-daemon --once` — verify no errors)
+3. Confirm SCRIPTS_DIR in `~/.claude/slack.conf` points to new version
 4. Only then report update as complete
 
 ## Linear Integration
