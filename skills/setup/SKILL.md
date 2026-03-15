@@ -104,9 +104,16 @@ If config exists but contains a `SLACK_TOKEN=` line, strip it — the token is m
 "${SCRIPTS_DIR}/slack-config-strip" SLACK_TOKEN
 ```
 
-If no config exists, ask the user for:
-- **Default channel** (e.g., `general`)
-- **Autonomous channels** (comma-separated list of channels to monitor in polling mode)
+If no config exists, interview the user for settings:
+
+1. **Default channel** — e.g., `agents`
+2. **Autonomous channels** — comma-separated list of channels to monitor (default: same as default channel)
+3. **Slack proxy** — interview-style:
+   - "Do you want to use a caching proxy? (y/n, default: n)"
+   - If yes: "Proxy hostname? (default: z490.lionsden.gbr)"
+   - If yes: "Proxy port? (default: 8321)"
+   - Construct URL: `http://<hostname>:<port>`
+   - If no: set to `none`
 
 Write the config file (**no token** — that's managed by slack-cli). Include `SCRIPTS_DIR` so all skills can source the conf instead of running a find pipeline:
 ```bash
@@ -115,6 +122,11 @@ DEFAULT_CHANNEL=<channel>
 AUTONOMOUS_CHANNELS=<channels>
 SCRIPTS_DIR="${SCRIPTS_DIR}"
 CONF
+```
+
+If the user configured a proxy (not "none"), also add:
+```bash
+echo 'SLACK_PROXY_URL="http://<hostname>:<port>"' >> ~/.claude/slack.conf
 ```
 
 ## Step 6: Verify

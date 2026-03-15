@@ -17,19 +17,29 @@ claude plugin update scc-slack@scc-marketplace
 
 This pulls the latest version from the scc-marketplace registry.
 
-### Step 2: Clear caches and update SCRIPTS_DIR
+### Step 2: Update config and clear caches
 
-Locate the new scripts directory and update `slack.conf`:
+Locate the new scripts directory:
 
 ```bash
 SCRIPTS_DIR=$(find ~/.claude/plugins/cache -path "*/scc-slack/*/scripts/slack-identity" 2>/dev/null | sort -V | tail -1 | xargs dirname)
 ```
 
-Update `SCRIPTS_DIR` in `slack.conf` so all skills use the new version:
+Update `SCRIPTS_DIR` in `slack.conf`:
 ```bash
 sed -i '/^SCRIPTS_DIR=/d' ~/.claude/slack.conf
 echo "SCRIPTS_DIR=\"${SCRIPTS_DIR}\"" >> ~/.claude/slack.conf
 ```
+
+Check `SLACK_PROXY_URL` — if missing, ask the user:
+```bash
+grep SLACK_PROXY_URL ~/.claude/slack.conf
+```
+- If present: leave it (already configured)
+- If missing: ask "Do you want to configure a caching proxy? (y/n, default: n)"
+  - If yes: "Hostname? (default: z490.lionsden.gbr)" then "Port? (default: 8321)"
+  - Add `SLACK_PROXY_URL="http://<hostname>:<port>"` to slack.conf
+  - If no or "none": skip — daemon falls back to direct Slack automatically
 
 Clear stale cached data (via `ctx_execute`):
 ```bash
