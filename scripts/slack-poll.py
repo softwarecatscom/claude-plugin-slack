@@ -373,7 +373,7 @@ def _run_daemon(*, once: bool = False, dry_run: bool = False, interval_override:
         raise typer.Exit(code=1)
 
     channels = [c.strip() for c in channels_str.split(",") if c.strip()]
-    proxy_url = config.get("SLACK_PROXY_URL")
+    proxy_url = os.environ.get("SLACK_PROXY_URL", config.get("SLACK_PROXY_URL"))
     poll_interval = interval_override or int(config.get("SLACK_POLL_INTERVAL", str(DEFAULT_POLL_INTERVAL)))
 
     _debug_log(f"Channels: {channels}")
