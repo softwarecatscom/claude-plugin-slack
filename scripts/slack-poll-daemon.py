@@ -9,19 +9,15 @@ Runs continuously, polling Slack every POLL_INTERVAL seconds.
 Only produces output (and exits) when actionable messages are found.
 Designed to be launched via Bash(run_in_background: true).
 
-Set SLACK_POLL_DAEMON=1 in ~/.claude/slack.conf to enable.
-
 Usage:
   slack-poll-daemon              — run until actionable messages found
   slack-poll-daemon --once       — run a single cycle (for testing)
   slack-poll-daemon --stop       — stop any running daemon
   slack-poll-daemon --status     — check if daemon is running
 
-Output format (same as slack-poll):
-  # channel=CHANNEL_NAME id=CHANNEL_ID
-  [{...messages...}]
-  # thread=PARENT_TS channel=CHANNEL_ID
-  [{...messages...}]
+Output: JSON array of enriched actionable messages with sender names resolved
+and thread context included. The agent receives everything needed to evaluate
+and respond without additional API calls.
 """
 
 import json
@@ -44,6 +40,8 @@ IDENTITY_FILE = Path.home() / ".claude" / "slack-cache" / "identity"
 CURSOR_FILE = Path.home() / ".claude" / "slack-cursors.conf"
 THREAD_CURSOR_FILE = Path.home() / ".claude" / "slack-thread-cursors.conf"
 CHANNEL_CACHE = Path.home() / ".claude" / "slack-cache" / "channels"
+USER_CACHE = Path.home() / ".claude" / "slack-cache" / "users"
+MENTION_TRACKER_STATE = Path.home() / ".claude" / "slack-mention-tracker.json"
 PID_FILE = Path.home() / ".claude" / "slack-poll-daemon.pid"
 FALLBACK_STATE_FILE = Path.home() / ".claude" / "slack-proxy-fallback-alerted"
 
@@ -216,6 +214,59 @@ def resolve_channel(client: SlackClient, name: str) -> str | None:
     return None
 
 
+# --- User resolution ---
+
+
+def resolve_user(client: SlackClient, user_id: str) -> str:
+    """Resolve a user ID to display name, using cache."""
+    if not user_id:
+        return "unknown"
+    # Check cache
+    if USER_CACHE.exists():
+        for line in USER_CACHE.read_text().splitlines():
+            if line.startswith(f"{user_id}="):
+                return line.split("=", 1)[1]
+    # API call
+    resp = client.get("users.info", {"user": user_id})
+    if resp.get("ok"):
+        profile = resp.get("user", {}).get("profile", {})
+        name = (
+            profile.get("display_name")
+            or profile.get("real_name")
+            or resp.get("user", {}).get("name", "unknown")
+        )
+        # Append to cache
+        USER_CACHE.parent.mkdir(parents=True, exist_ok=True)
+        with open(USER_CACHE, "a") as f:
+            f.write(f"{user_id}={name}\n")
+        return name
+    return "unknown"
+
+
+# --- Mention tracker (inline) ---
+
+
+def mention_tracker_responded(channel: str, thread_ts: str, user_id: str):
+    """Clear a tracked @mention (agent responded). No-op if not tracked."""
+    if not MENTION_TRACKER_STATE.exists():
+        return
+    try:
+        state = json.loads(MENTION_TRACKER_STATE.read_text())
+    except (json.JSONDecodeError, ValueError):
+        return
+    new_state = [
+        e
+        for e in state
+        if not (
+            e.get("channel") == channel
+            and e.get("thread_ts") == thread_ts
+            and e.get("user_id") == user_id
+        )
+    ]
+    if len(new_state) != len(state):
+        MENTION_TRACKER_STATE.write_text(json.dumps(new_state, indent=2))
+
+
 # --- Cursor management ---
 
 
@@ -252,9 +303,10 @@ def write_cursor(cursor_file: Path, channel_id: str, ts: str):
 def filter_messages(
     messages: list[dict],
     identity: dict,
+    client: SlackClient | None = None,
     thread_participant: bool = False,
 ) -> list[dict]:
-    """Filter messages for actionable ones (port of slack-filter)."""
+    """Filter messages for actionable ones. Resolves sender names if client provided."""
     user_id = identity.get("USER_ID", "")
     username = identity.get("USERNAME", "").lower()
     display_name = identity.get("DISPLAY_NAME", "").lower()
@@ -302,16 +354,16 @@ def filter_messages(
             match_type = "thread_participant"
 
         if match_type:
-            results.append(
-                {
-                    "ts": msg.get("ts"),
-                    "user": msg.get("user"),
-                    "text": text,
-                    "match_type": match_type,
-                    "bot_id": msg.get("bot_id"),
-                    "thread_ts": msg.get("thread_ts"),
-                }
-            )
+            sender_id = msg.get("user", "")
+            entry = {
+                "ts": msg.get("ts"),
+                "user": sender_id,
+                "sender": resolve_user(client, sender_id) if client else sender_id,
+                "text": text,
+                "match_type": match_type,
+                "thread_ts": msg.get("thread_ts"),
+            }
+            results.append(entry)
 
     # Reverse to chronological order (oldest first)
     results.reverse()
@@ -321,14 +373,36 @@ def filter_messages(
 # --- Poll cycle ---
 
 
+def fetch_thread_context(
+    client: SlackClient, channel_id: str, thread_ts: str
+) -> list[dict]:
+    """Fetch full thread as simplified context for the agent."""
+    resp = client.get(
+        "conversations.replies",
+        {"channel": channel_id, "ts": thread_ts, "limit": "50"},
+    )
+    if not resp.get("ok"):
+        return []
+    context = []
+    for msg in resp.get("messages", []):
+        context.append(
+            {
+                "sender": resolve_user(client, msg.get("user", "")),
+                "text": msg.get("text", ""),
+                "ts": msg.get("ts", ""),
+            }
+        )
+    return context
+
+
 def poll_cycle(
     client: SlackClient,
     channels: list[str],
     identity: dict,
     scripts_dir: Path | None,
 ) -> str:
-    """Run one poll cycle. Returns output string if actionable, empty if quiet."""
-    output_parts: list[str] = []
+    """Run one poll cycle. Returns enriched JSON if actionable, empty if quiet."""
+    all_actionable: list[dict] = []
     user_id = identity.get("USER_ID", "")
 
     for channel_name in channels:
@@ -336,18 +410,13 @@ def poll_cycle(
         if not channel_name:
             continue
 
-        # Resolve channel
         channel_id = resolve_channel(client, channel_name)
         if not channel_id:
-            output_parts.append(f"# channel={channel_name} id=UNKNOWN")
-            output_parts.append("[]")
             print(
                 f"ERROR: Could not resolve channel '{channel_name}'",
                 file=sys.stderr,
             )
             continue
-
-        output_parts.append(f"# channel={channel_name} id={channel_id}")
 
         # Read cursors
         old_cursor = read_cursor(CURSOR_FILE, channel_id)
@@ -364,12 +433,13 @@ def poll_cycle(
         messages = history.get("messages", []) if history.get("ok") else []
 
         # Filter channel messages
-        channel_matches = filter_messages(messages, identity)
-        output_parts.append(json.dumps(channel_matches))
+        channel_matches = filter_messages(messages, identity, client)
+        for msg in channel_matches:
+            msg["channel"] = channel_name
+            msg["channel_id"] = channel_id
+        all_actionable.extend(channel_matches)
 
         # --- Thread scanning ---
-
-        # Wider history for thread scanning (last 50 messages)
         thread_history = client.get(
             "conversations.history",
             {"channel": channel_id, "limit": str(THREAD_HISTORY_LIMIT)},
@@ -378,7 +448,6 @@ def poll_cycle(
             thread_history.get("messages", []) if thread_history.get("ok") else []
         )
 
-        # Thread cursor
         old_thread_cursor = read_cursor(THREAD_CURSOR_FILE, channel_id)
         effective_cursor = old_thread_cursor or old_cursor
 
@@ -402,8 +471,6 @@ def poll_cycle(
 
         for parent in thread_parents:
             parent_ts = parent["ts"]
-            output_parts.append(f"# thread={parent_ts} channel={channel_id}")
-
             replies_resp = client.get(
                 "conversations.replies",
                 {
@@ -415,14 +482,24 @@ def poll_cycle(
             reply_msgs = (
                 replies_resp.get("messages", []) if replies_resp.get("ok") else []
             )
-            # Strip thread_broadcast (already in channel output)
             reply_msgs = [
                 m for m in reply_msgs if m.get("subtype") != "thread_broadcast"
             ]
             thread_matches = filter_messages(
-                reply_msgs, identity, thread_participant=True
+                reply_msgs, identity, client, thread_participant=True
             )
-            output_parts.append(json.dumps(thread_matches))
+            # Enrich with channel info and thread context
+            if thread_matches:
+                thread_ctx = fetch_thread_context(client, channel_id, parent_ts)
+                for msg in thread_matches:
+                    msg["channel"] = channel_name
+                    msg["channel_id"] = channel_id
+                    msg["thread_context"] = thread_ctx
+                    # Auto-clear mention tracking
+                    mention_tracker_responded(
+                        channel_id, parent_ts, msg.get("user", "")
+                    )
+                all_actionable.extend(thread_matches)
 
         # --- Non-participating threads with @mentions ---
         mention_parents = []
@@ -458,11 +535,14 @@ def poll_cycle(
             reply_msgs = [
                 m for m in reply_msgs if m.get("subtype") != "thread_broadcast"
             ]
-            # Only direct mentions (not thread_participant mode)
-            mention_matches = filter_messages(reply_msgs, identity)
+            mention_matches = filter_messages(reply_msgs, identity, client)
             if mention_matches:
-                output_parts.append(f"# thread={parent_ts} channel={channel_id}")
-                output_parts.append(json.dumps(mention_matches))
+                thread_ctx = fetch_thread_context(client, channel_id, parent_ts)
+                for msg in mention_matches:
+                    msg["channel"] = channel_name
+                    msg["channel_id"] = channel_id
+                    msg["thread_context"] = thread_ctx
+                all_actionable.extend(mention_matches)
 
         # --- Advance cursors ---
         if messages:
@@ -470,7 +550,6 @@ def poll_cycle(
             if newest_ts:
                 write_cursor(CURSOR_FILE, channel_id, newest_ts)
 
-        # Advance thread cursor
         newest_thread_ts = ""
         for parent in thread_parents:
             for msg in thread_messages:
@@ -504,20 +583,9 @@ def poll_cycle(
         except (subprocess.TimeoutExpired, FileNotFoundError, OSError):
             pass
 
-    # Check if any actionable messages were found
-    has_actionable = False
-    for part in output_parts:
-        if part.startswith("#") or part == "[]":
-            continue
-        try:
-            parsed = json.loads(part)
-            if isinstance(parsed, list) and len(parsed) > 0:
-                has_actionable = True
-                break
-        except (json.JSONDecodeError, ValueError):
-            continue
-
-    return "\n".join(output_parts) if has_actionable else ""
+    if all_actionable:
+        return json.dumps(all_actionable, indent=2)
+    return ""
 
 
 # --- PID management ---
