@@ -5,7 +5,7 @@ description: Stop the Slack polling loop. Use when the user says "stop slack", "
 
 # Stop Slack Loop
 
-Stop the recurring Slack polling loop and the poll daemon.
+Stop the recurring Slack polling loop and the slack poller.
 
 ## Steps
 

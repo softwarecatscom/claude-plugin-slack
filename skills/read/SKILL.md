@@ -5,7 +5,7 @@ description: Process Slack messages from the daemon. Use when the daemon-loop sk
 
 # Read Slack Messages
 
-Process actionable messages from the poll daemon.
+Process actionable messages from the slack poller.
 
 ```bash
 source ~/.claude/slack.conf

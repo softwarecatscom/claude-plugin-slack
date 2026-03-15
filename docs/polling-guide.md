@@ -8,7 +8,7 @@ How agents monitor Slack channels for messages.
 /scc-slack:loop
 ```
 
-This creates a 1-minute cron that manages the poll daemon automatically.
+This creates a 1-minute cron that manages the slack poller automatically.
 
 ## How It Works
 
