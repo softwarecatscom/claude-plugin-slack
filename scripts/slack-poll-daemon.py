@@ -539,8 +539,9 @@ def _poll_channel(client: SlackClient, channel_name: str, identity: dict) -> lis
         if newest_ts:
             write_cursor(CURSOR_FILE, channel_id, newest_ts)
 
+    # Advance thread cursor across ALL scanned threads (participating + non-participating)
     newest_thread_ts = ""
-    for parent in participating:
+    for parent in [*participating, *non_participating]:
         for msg in thread_messages:
             if msg["ts"] == parent["ts"]:
                 newest_thread_ts = max(newest_thread_ts, msg.get("latest_reply", ""))
