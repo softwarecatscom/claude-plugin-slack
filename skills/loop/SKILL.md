@@ -5,7 +5,7 @@ description: Start a /loop 3m polling cycle for Slack channels. Use when the use
 
 # Slack Loop
 
-Start a 3-minute polling cycle that monitors configured Slack channels via the long-poll daemon. The daemon runs in the background and only wakes the agent when actionable messages arrive.
+Start a 3-minute polling cycle that monitors configured Slack channels via the slack poller. The poller runs in the background and only wakes the agent when actionable messages arrive.
 
 **Announce at start:** "Starting Slack polling loop (3m interval)."
 

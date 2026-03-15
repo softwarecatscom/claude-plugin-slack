@@ -142,7 +142,7 @@ if __name__ == "__main__":
 
 ## Daemon Architecture
 
-The poll daemon (`scripts/slack-poll.py`) is the **only** mechanism for agents to receive Slack events. There is no cron-based `slack-poll` alternative.
+The slack poller (`scripts/slack-poll.py`) is the **only** mechanism for agents to receive Slack events. There is no cron-based `slack-poll` alternative.
 
 ### How it works
 1. `/loop 1m` cron fires → invokes `daemon-loop` skill

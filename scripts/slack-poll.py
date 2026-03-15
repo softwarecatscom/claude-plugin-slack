@@ -3,7 +3,7 @@
 # requires-python = ">=3.11"
 # dependencies = ["httpx", "typer"]
 # ///
-"""Long-poll daemon for Slack monitoring.
+"""Slack poller — long-poll monitor for Slack channels.
 
 Runs continuously, polling Slack every POLL_INTERVAL seconds.
 Only produces output (and exits) when actionable messages are found.
@@ -67,7 +67,7 @@ POLL_OPTIONS = {
 
 app = typer.Typer(
     name="slack-poll",
-    help="Long-poll daemon for Slack monitoring.",
+    help="Slack poller — long-poll monitor for Slack channels.",
     add_completion=False,
 )
 
@@ -378,7 +378,7 @@ def main(
     interval: Optional[int] = POLL_OPTIONS["interval"],  # noqa: UP045
     context: bool = POLL_OPTIONS["context"],
 ) -> None:
-    """Long-poll daemon for Slack monitoring."""
+    """Slack poller — long-poll monitor for Slack channels."""
     _apply_globals(verbose, debug)
     if ctx.invoked_subcommand is None:
         _run_daemon(once=False, dry_run=dry_run, interval_override=interval, include_context=context)

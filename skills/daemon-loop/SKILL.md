@@ -1,6 +1,6 @@
 ---
 name: daemon-loop
-description: Supervise the Slack poll daemon — launch if stopped, process messages when it wakes. Invoked by the /loop 1m cron every minute.
+description: Supervise the slack poller — launch if stopped, process messages when it wakes. Invoked by the /loop 1m cron every minute.
 ---
 
 # Daemon Loop
@@ -19,9 +19,9 @@ source ~/.claude/slack.conf
 - **"stopped"**: Launch it:
 
 ```bash
-Bash(command: "${SCRIPTS_DIR}/slack-poll", description: "slack poll daemon", run_in_background: true)
+Bash(command: "${SCRIPTS_DIR}/slack-poll", description: "slack-poll", run_in_background: true)
 ```
 
 ## When the background task completes
 
-Read the output. Use the `scc-slack:read` skill to process the messages. The next cron tick will re-launch the daemon.
+Read the output. Use the `scc-slack:read` skill to process the messages. The next cron tick will re-launch the poller.
