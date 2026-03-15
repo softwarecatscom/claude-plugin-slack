@@ -29,12 +29,55 @@ Pre-commit runs automatically on `git commit`. Hooks include: shellcheck (bash),
 - Use a `while/case` loop that collects `POSITIONALS` array for non-flag arguments
 
 ### Language Choice
-- **New complex scripts**: Write in Python (`.py` extension) with a bash wrapper
+- **New scripts**: Write in Python (`.py` extension) with a bash wrapper
 - **Existing simple scripts**: Keep as bash; don't rewrite unless major changes are needed
-- **Bash wrappers** are minimal: shebang, `set -euo pipefail`, `exec uv run script.py "$@"`
+- **Bash wrappers** are minimal: shebang, `set -euo pipefail`, `exec uv run --no-project script.py "$@"`
+
+### PEP 723 Inline Script Metadata
+
+All Python scripts use [PEP 723](https://peps.python.org/pep-0723/) inline metadata for dependency declaration. This lets `uv run --no-project` install deps automatically without a virtualenv.
+
+```python
+#!/usr/bin/env python3
+# /// script
+# requires-python = ">=3.11"
+# dependencies = ["httpx", "typer"]
+# ///
+```
+
+### Typer CLI Standard
+
+Python scripts with CLI arguments use [Typer](https://typer.tiangolo.com/) for argument parsing. All scripts must support these standard flags:
+
+| Flag | Description |
+|------|-------------|
+| `--debug` | Enable debug output to stderr |
+| `--verbose`, `-v` | Increase verbosity (repeatable: `-v`, `-vv`, `-vvv`) |
+| `--dry-run` | Run without side effects (skip writes, API mutations) |
+
+Example structure:
+
+```python
+import typer
+
+app = typer.Typer(name="slack-example", add_completion=False)
+
+@app.command()
+def run(
+    verbose: int = typer.Option(0, "--verbose", "-v", count=True, help="Increase verbosity"),
+    debug: bool = typer.Option(False, "--debug", help="Enable debug output"),
+    dry_run: bool = typer.Option(False, "--dry-run", help="Dry run"),
+) -> None:
+    """Run the thing."""
+
+if __name__ == "__main__":
+    app()
+```
+
+Use `typer.echo(msg, err=True)` for diagnostic output (stderr). Use `typer.echo(msg)` for program output (stdout). Use `raise typer.Exit(code=1)` instead of `sys.exit(1)`.
 
 ### JSON Construction
-- Use `jq -n` for building JSON payloads (never string interpolation)
+- Use `jq -n` for building JSON payloads in bash (never string interpolation)
 - In Python, use the `json` module directly
 
 ### Self-Bootstrapping

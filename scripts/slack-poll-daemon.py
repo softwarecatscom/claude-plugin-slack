@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 # /// script
 # requires-python = ">=3.11"
-# dependencies = ["httpx"]
+# dependencies = ["httpx", "typer"]
 # ///
 """Long-poll daemon for Slack monitoring.
 
@@ -9,15 +9,8 @@ Runs continuously, polling Slack every POLL_INTERVAL seconds.
 Only produces output (and exits) when actionable messages are found.
 Designed to be launched via Bash(run_in_background: true).
 
-Usage:
-  slack-poll-daemon              — run until actionable messages found
-  slack-poll-daemon --once       — run a single cycle (for testing)
-  slack-poll-daemon --stop       — stop any running daemon
-  slack-poll-daemon --status     — check if daemon is running
-
 Output: JSON array of enriched actionable messages with sender names resolved
-and thread context included. The agent receives everything needed to evaluate
-and respond without additional API calls.
+and thread context included.
 """
 
 from __future__ import annotations
@@ -36,6 +29,7 @@ import time
 from pathlib import Path
 
 import httpx
+import typer
 
 # --- Paths ---
 
@@ -65,6 +59,14 @@ BROADCAST_RE = re.compile(
     r"|(^|\s)@everyone(\s|$)",
 )
 
+# --- App ---
+
+app = typer.Typer(
+    name="slack-poll-daemon",
+    help="Long-poll daemon for Slack monitoring.",
+    add_completion=False,
+)
+
 # --- Shutdown ---
 
 _shutdown = False
@@ -77,6 +79,23 @@ def _handle_signal(_signum: int, _frame: object) -> None:
 
 signal.signal(signal.SIGTERM, _handle_signal)
 signal.signal(signal.SIGINT, _handle_signal)
+
+# --- Logging ---
+
+_verbose = 0
+_debug = False
+
+
+def _log(msg: str, level: int = 1) -> None:
+    """Print to stderr if verbosity >= level."""
+    if _verbose >= level:
+        typer.echo(msg, err=True)
+
+
+def _debug_log(msg: str) -> None:
+    """Print to stderr if --debug enabled."""
+    if _debug:
+        typer.echo(f"DEBUG: {msg}", err=True)
 
 
 # --- Config ---
@@ -100,8 +119,9 @@ def _parse_key_value_file(path: Path) -> dict[str, str]:
 def load_config() -> dict[str, str]:
     """Load key=value config from slack.conf."""
     if not CONFIG_FILE.exists():
-        print(f"ERROR: No config at {CONFIG_FILE}", file=sys.stderr)
-        sys.exit(1)
+        typer.echo(f"ERROR: No config at {CONFIG_FILE}", err=True)
+        raise typer.Exit(code=1)
+    _debug_log(f"Loading config from {CONFIG_FILE}")
     return _parse_key_value_file(CONFIG_FILE)
 
 
@@ -117,21 +137,23 @@ def load_identity() -> dict[str, str]:
                 check=False,
             )
     if not IDENTITY_FILE.exists():
-        print("ERROR: No identity cached.", file=sys.stderr)
-        sys.exit(1)
-    return _parse_key_value_file(IDENTITY_FILE)
+        typer.echo("ERROR: No identity cached.", err=True)
+        raise typer.Exit(code=1)
+    identity = _parse_key_value_file(IDENTITY_FILE)
+    _debug_log(f"Identity: {identity.get('REAL_NAME', '?')} ({identity.get('USER_ID', '?')})")
+    return identity
 
 
 def load_token() -> str:
     """Load Slack token from slack-cli's .slack file."""
     slack_bin = shutil.which("slack")
     if not slack_bin:
-        print("ERROR: slack-cli not found in PATH", file=sys.stderr)
-        sys.exit(1)
+        typer.echo("ERROR: slack-cli not found in PATH", err=True)
+        raise typer.Exit(code=1)
     token_file = Path(slack_bin).parent / ".slack"
     if not token_file.exists():
-        print("ERROR: No Slack token found.", file=sys.stderr)
-        sys.exit(1)
+        typer.echo("ERROR: No Slack token found.", err=True)
+        raise typer.Exit(code=1)
     return token_file.read_text().strip()
 
 
@@ -161,6 +183,7 @@ class SlackClient:
 
     def get(self, method: str, params: dict | None = None) -> dict:
         """Call a Slack API method with proxy fallback."""
+        _debug_log(f"API: {method} {params or ''}")
         url = f"{self.base_url}/api/{method}"
         try:
             resp = self._client.get(url, params=params)
@@ -182,10 +205,7 @@ class SlackClient:
         if now - self._last_fallback_warn < FALLBACK_COOLDOWN:
             return
         self._last_fallback_warn = now
-        print(
-            f"WARN: Proxy {self.base_url} unreachable ({reason}), falling back to direct Slack",
-            file=sys.stderr,
-        )
+        _log(f"WARN: Proxy {self.base_url} unreachable ({reason}), falling back to direct Slack", level=0)
         FALLBACK_STATE_FILE.parent.mkdir(parents=True, exist_ok=True)
         FALLBACK_STATE_FILE.write_text(str(int(now)))
 
@@ -206,6 +226,7 @@ def resolve_channel(client: SlackClient, name: str) -> str | None:
             if "=" in line:
                 cached_id, _, cached_name = line.partition("=")
                 if cached_name.lower() == name.lower():
+                    _debug_log(f"Channel cache hit: {name} → {cached_id}")
                     return cached_id
     resp = client.get(
         "conversations.list",
@@ -368,7 +389,7 @@ def fetch_thread_context(client: SlackClient, channel_id: str, thread_ts: str) -
 def _find_active_threads(
     thread_messages: list[dict], user_id: str, effective_cursor: str, *, participating: bool
 ) -> list[dict]:
-    """Find threads with new activity. If participating=True, find threads we're in; otherwise threads we're not in."""
+    """Find threads with new activity."""
     parents = []
     for msg in thread_messages:
         if msg.get("reply_count", 0) <= 0:
@@ -434,11 +455,13 @@ def _poll_channel(client: SlackClient, channel_name: str, identity: dict) -> lis
     """Poll a single channel for actionable messages."""
     channel_id = resolve_channel(client, channel_name)
     if not channel_id:
-        print(f"ERROR: Could not resolve channel '{channel_name}'", file=sys.stderr)
+        _log(f"ERROR: Could not resolve channel '{channel_name}'", level=0)
         return []
 
+    _debug_log(f"Polling #{channel_name} ({channel_id})")
     user_id = identity.get("USER_ID", "")
     old_cursor = read_cursor(CURSOR_FILE, channel_id)
+    _debug_log(f"Channel cursor: {old_cursor or '(none)'}")
 
     # Fetch channel history
     params: dict[str, str] = {
@@ -450,6 +473,7 @@ def _poll_channel(client: SlackClient, channel_name: str, identity: dict) -> lis
 
     history = client.get("conversations.history", params)
     messages = history.get("messages", []) if history.get("ok") else []
+    _debug_log(f"Channel messages: {len(messages)}")
 
     # Filter channel messages
     actionable: list[dict] = []
@@ -458,6 +482,7 @@ def _poll_channel(client: SlackClient, channel_name: str, identity: dict) -> lis
         msg["channel"] = channel_name
         msg["channel_id"] = channel_id
     actionable.extend(channel_matches)
+    _debug_log(f"Channel matches: {len(channel_matches)}")
 
     # Thread scanning
     thread_history = client.get(
@@ -470,6 +495,7 @@ def _poll_channel(client: SlackClient, channel_name: str, identity: dict) -> lis
 
     # Participating threads
     participating = _find_active_threads(thread_messages, user_id, effective_cursor, participating=True)
+    _debug_log(f"Participating threads with activity: {len(participating)}")
     actionable.extend(
         _scan_threads(
             client,
@@ -484,6 +510,7 @@ def _poll_channel(client: SlackClient, channel_name: str, identity: dict) -> lis
 
     # Non-participating threads with @mentions
     non_participating = _find_active_threads(thread_messages, user_id, effective_cursor, participating=False)
+    _debug_log(f"Non-participating threads with activity: {len(non_participating)}")
     actionable.extend(
         _scan_threads(
             client,
@@ -525,6 +552,8 @@ def poll_cycle(
     channels: list[str],
     identity: dict,
     scripts_dir: Path | None,
+    *,
+    dry_run: bool = False,
 ) -> str:
     """Run one poll cycle. Returns enriched JSON if actionable, empty if quiet."""
     all_actionable: list[dict] = []
@@ -533,12 +562,16 @@ def poll_cycle(
         if stripped:
             all_actionable.extend(_poll_channel(client, stripped, identity))
 
-    if scripts_dir:
+    if scripts_dir and not dry_run:
         _run_subprocess([str(scripts_dir / "slack-heartbeat")], timeout=30)
         _run_subprocess([str(scripts_dir / "slack-mention-tracker"), "tick"], timeout=10)
+    elif dry_run:
+        _log("DRY RUN: skipping heartbeat and mention tracker", level=0)
 
     if all_actionable:
+        _log(f"Found {len(all_actionable)} actionable message(s)", level=1)
         return json.dumps(all_actionable, indent=2)
+    _debug_log("No actionable messages")
     return ""
 
 
@@ -568,64 +601,105 @@ def write_pid() -> None:
 # --- Commands ---
 
 
-def cmd_stop() -> None:
+@app.command()
+def stop() -> None:
     """Stop a running daemon."""
     pid = read_pid()
     if pid:
         try:
             os.kill(pid, signal.SIGTERM)
-            print(f"Stopped daemon (PID {pid})")
+            typer.echo(f"Stopped daemon (PID {pid})")
         except ProcessLookupError:
-            print("Daemon not running (stale PID file)")
+            typer.echo("Daemon not running (stale PID file)")
         PID_FILE.unlink(missing_ok=True)
     else:
-        print("Daemon not running")
+        typer.echo("Daemon not running")
 
 
-def cmd_status() -> None:
-    """Print daemon status."""
+@app.command()
+def status() -> None:
+    """Check if daemon is running."""
     pid = read_pid()
     if pid:
-        print(f"running (PID {pid})")
+        typer.echo(f"running (PID {pid})")
     else:
-        print("stopped")
+        typer.echo("stopped")
 
 
-# --- Main ---
+@app.command()
+def once(
+    verbose: int = typer.Option(0, "--verbose", "-v", count=True, help="Increase verbosity"),
+    debug: bool = typer.Option(False, "--debug", help="Enable debug output"),
+    dry_run: bool = typer.Option(False, "--dry-run", help="Poll but skip heartbeat/mention tracker"),
+) -> None:
+    """Run a single poll cycle (for testing)."""
+    global _verbose, _debug  # noqa: PLW0603
+    _verbose = verbose
+    _debug = debug
+
+    _run_daemon(once=True, dry_run=dry_run)
 
 
-def main() -> None:
-    """Entry point."""
-    args = sys.argv[1:]
+@app.command()
+def run(
+    verbose: int = typer.Option(0, "--verbose", "-v", count=True, help="Increase verbosity"),
+    debug: bool = typer.Option(False, "--debug", help="Enable debug output"),
+    dry_run: bool = typer.Option(False, "--dry-run", help="Poll but skip heartbeat/mention tracker"),
+    interval: int | None = typer.Option(None, "--interval", "-i", help="Poll interval in seconds"),
+) -> None:
+    """Run daemon until actionable messages found (default command)."""
+    global _verbose, _debug  # noqa: PLW0603
+    _verbose = verbose
+    _debug = debug
 
-    if "--stop" in args:
-        cmd_stop()
-        return
-    if "--status" in args:
-        cmd_status()
-        return
+    _run_daemon(once=False, dry_run=dry_run, interval_override=interval)
 
-    once = "--once" in args
 
+@app.callback(invoke_without_command=True)
+def main(
+    ctx: typer.Context,
+    verbose: int = typer.Option(0, "--verbose", "-v", count=True, help="Increase verbosity"),
+    debug: bool = typer.Option(False, "--debug", help="Enable debug output"),
+    dry_run: bool = typer.Option(False, "--dry-run", help="Poll but skip heartbeat/mention tracker"),
+    interval: int | None = typer.Option(None, "--interval", "-i", help="Poll interval in seconds"),
+) -> None:
+    """Long-poll daemon for Slack monitoring."""
+    global _verbose, _debug  # noqa: PLW0603
+    _verbose = verbose
+    _debug = debug
+
+    if ctx.invoked_subcommand is None:
+        _run_daemon(once=False, dry_run=dry_run, interval_override=interval)
+
+
+def _run_daemon(*, once: bool = False, dry_run: bool = False, interval_override: int | None = None) -> None:
+    """Core daemon loop."""
     existing_pid = read_pid()
     if existing_pid:
-        print(
-            f"ERROR: Daemon already running (PID {existing_pid}). Use --stop first.",
-            file=sys.stderr,
+        typer.echo(
+            f"ERROR: Daemon already running (PID {existing_pid}). Use 'stop' first.",
+            err=True,
         )
-        sys.exit(1)
+        raise typer.Exit(code=1)
 
     write_pid()
 
     config = load_config()
     channels_str = config.get("AUTONOMOUS_CHANNELS", "")
     if not channels_str:
-        print("ERROR: AUTONOMOUS_CHANNELS not set in config", file=sys.stderr)
-        sys.exit(1)
+        typer.echo("ERROR: AUTONOMOUS_CHANNELS not set in config", err=True)
+        raise typer.Exit(code=1)
 
     channels = [c.strip() for c in channels_str.split(",") if c.strip()]
     proxy_url = config.get("SLACK_PROXY_URL")
-    poll_interval = int(config.get("SLACK_POLL_INTERVAL", str(DEFAULT_POLL_INTERVAL)))
+    poll_interval = interval_override or int(config.get("SLACK_POLL_INTERVAL", str(DEFAULT_POLL_INTERVAL)))
+
+    _debug_log(f"Channels: {channels}")
+    _debug_log(f"Proxy: {proxy_url or '(direct)'}")
+    _debug_log(f"Interval: {poll_interval}s")
+    _debug_log(f"Mode: {'once' if once else 'daemon'}")
+    if dry_run:
+        _log("DRY RUN mode enabled", level=0)
 
     token = load_token()
     identity = load_identity()
@@ -636,23 +710,24 @@ def main() -> None:
     try:
         while not _shutdown:
             try:
-                output = poll_cycle(client, channels, identity, scripts_dir)
+                output = poll_cycle(client, channels, identity, scripts_dir, dry_run=dry_run)
             except Exception as exc:
-                print(f"ERROR: Poll cycle failed: {exc}", file=sys.stderr)
+                _log(f"ERROR: Poll cycle failed: {exc}", level=0)
                 output = ""
 
             if output:
-                print(output)
+                typer.echo(output)
                 sys.stdout.flush()
                 break
 
             if once:
                 break
 
+            _debug_log(f"Sleeping {poll_interval}s")
             time.sleep(poll_interval)
     finally:
         client.close()
 
 
 if __name__ == "__main__":
-    main()
+    app()
