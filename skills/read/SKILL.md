@@ -28,7 +28,7 @@ If invoked manually (not from poller): `"${SCRIPTS_DIR}/slack-poll" once`
 
 ## Agent Algorithm
 
-1. **Read** (not cat) the poller output
+1. **Read** (not cat) the poller output and show the path of the .output file of the background task
 2. **Scan the actionables** — check for conversation closure, classify, don't skip blindly
 3. **Exclude conversation closures** — build the actionable list and note the count
 4. **For each actionable message do the following:**

@@ -15,7 +15,7 @@ This creates a 1-minute cron that manages the slack poller automatically.
 ```
 /loop 2m cron fires
     → poller-loop skill checks: is poller running?
-    → if stopped: launch via Bash(run_in_background: true)
+    → if stopped: launch via Bash(run_in_background: true, timeout: 600000)
     → if running: do nothing (zero cost)
 
 poller runs in background
