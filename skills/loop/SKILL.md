@@ -25,6 +25,10 @@ The daemon handles polling, filtering, heartbeat, and mention tracker internally
 
 **DO NOT create a separate cron job for `/heartbeat`.** Heartbeat is built into the daemon — if you are polling, you are heartbeating.
 
+## Reference
+
+For detailed architecture, message format, processing rules, and troubleshooting: read `docs/polling-guide.md` in the plugin repo (once per session, not every cycle).
+
 ## Stopping
 
 Tell the user the CronDelete job ID so they can stop polling when done, or use `scc-slack:stop`.
